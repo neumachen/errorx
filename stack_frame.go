@@ -12,15 +12,15 @@ import (
 // in a callstack.
 type StackFrame struct {
 	// The path to the file containing this ProgramCounter
-	File string
+	File string `json:"file"`
 	// The LineNumber in that file
-	LineNumber int
+	LineNumber int `json:"line_number"`
 	// The Name of the function that contains this ProgramCounter
-	Name string
+	Name string `json:"name"`
 	// The Package that contains this function
-	Package string
+	Package string `json:"package"`
 	// The underlying ProgramCounter
-	ProgramCounter uintptr
+	ProgramCounter uintptr `json:"program_counter"`
 }
 
 // NewStackFrame popoulates a stack frame object from the program counter.

@@ -15,17 +15,17 @@ import (
 	"runtime"
 )
 
-// The maximum number of stackframes on any error.
+// MaxStackDepth is the maximum number of stackframes on any error.
 var MaxStackDepth = 50
 
 // Error is a more feature rich implementation of error interface inspired by
 // PostgreSQL error style guide.  It can be used wherever the builtin error
 // interface is expected.
 type Error struct {
-	Cause  error
-	stack  []uintptr
-	frames []StackFrame
-	prefix string
+	Cause  error        `json:"cause"`
+	stack  []uintptr    `json:"stack"`
+	frames []StackFrame `json:"stack_frame"`
+	prefix string       `json:"prefix"`
 }
 
 // New makes an Error from the given value. If that value is already an

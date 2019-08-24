@@ -15,10 +15,11 @@ Feature-rich Golang error interface implementation inspired by Postgres error me
 * JSON errors you can just write to your webhandler
 
 # docs
-http://godoc.org/github.com/goware/errorx
+http://godoc.org/github.com/magicalbanana/errorx
 
 # example output
 ### json, nested error, verbosity: Trace
+
 ```json
 {
    "error_code":10,
@@ -56,6 +57,7 @@ http://godoc.org/github.com/goware/errorx
 ```
 
 ### string (via .Error()), verbosity: Debug
+
 ```
 errorx_test.go:28: error 10: error message | error details; error hint
 ```

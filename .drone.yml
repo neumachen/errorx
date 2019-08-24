@@ -1,0 +1,71 @@
+---
+kind: secret
+name: slack-webhook
+
+get:
+  path: drone-kubernetes-secrets-data
+  name: slack-webhook
+---
+kind: pipeline
+name: build-test
+
+clone:
+  depth: 50
+
+volumes:
+  - name: deps
+    temp: {}
+
+steps:
+  - name: slack-notification-start-test
+    image: plugins/slack
+    settings:
+      webhook:
+        from_secret: slack-webhook
+      channel: ci
+      username: drone
+      template: >
+        <{{ build.link }}|Build #{{ build.number }} started>
+        <http://github.com/{{ repo.owner }}/{{ repo.name }}/tree/{{ build.branch }}|
+        on {{ repo.name }}:{{ build.branch }}>
+        by {{ build.author }}
+
+  - name: build-modules
+    image: golang:1.12.5-alpine3.9
+    volumes:
+      - name: deps
+        path: /go
+    commands:
+      - apk add --update --no-cache git
+      - go build -v ./...
+      - go mod vendor
+
+  - name: test
+    image: golang:1.12.5-alpine3.9
+    volumes:
+      - name: deps
+        path: /go
+    depends_on:
+      - build-modules
+    commands:
+      - apk add --update --no-cache alpine-sdk bash
+      - go test -v ./...
+
+  - name: slack-notification-finish-test
+    image: plugins/slack
+    settings:
+      webhook:
+        from_secret: slack-webhook
+      channel: ci
+      username: drone
+      template: >
+        <{{ build.link }}|Build #{{ build.number }} {{ build.status }}>
+        on <http://github.com/{{ repo.owner }}/{{ repo.name }}/tree/{{ build.branch }}|
+        {{ repo.name }}:{{ build.branch }}> by @{{ build.author }}
+    depends_on:
+      - test
+    when:
+      status:
+        - success
+        - failure
+

@@ -10,6 +10,7 @@ package errorx
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"runtime"
@@ -26,6 +27,23 @@ type Error struct {
 	stack  []uintptr
 	frames []StackFrame
 	prefix string
+}
+
+// MarshalJSON ...
+func (e *Error) MarshalJSON() ([]byte, error) {
+	type Alias Error
+
+	return json.Marshal(&struct {
+		Stack  []uintptr    `json:"stack,omitempty"`
+		Frames []StackFrame `json:"frames,omitempty"`
+		Prefix string       `json:"prefix,omitempty"`
+		*Alias
+	}{
+		Alias:  (*Alias)(e),
+		Stack:  e.stack,
+		Frames: e.frames,
+		Prefix: e.prefix,
+	})
 }
 
 // New makes an Error from the given value. If that value is already an
@@ -81,7 +99,6 @@ func Wrap(e interface{}, skip int) *Error {
 // up the stack to start the stacktrace. 0 is from the current call,
 // 1 from its caller, etc.
 func WrapPrefix(e interface{}, prefix string, skip int) *Error {
-
 	err := Wrap(e, skip)
 
 	if err.prefix != "" {
@@ -91,7 +108,6 @@ func WrapPrefix(e interface{}, prefix string, skip int) *Error {
 	}
 
 	return err
-
 }
 
 // Is detects whether the error is equal to a given error. Errors
@@ -122,11 +138,10 @@ func Errorf(format string, a ...interface{}) *Error {
 }
 
 // Error returns the underlying error's message.
-func (err *Error) Error() string {
-
-	msg := err.Cause.Error()
-	if err.prefix != "" {
-		msg = fmt.Sprintf("%s: %s", err.prefix, msg)
+func (e *Error) Error() string {
+	msg := e.Cause.Error()
+	if e.prefix != "" {
+		msg = fmt.Sprintf("%s: %s", e.prefix, msg)
 	}
 
 	return msg
@@ -134,10 +149,9 @@ func (err *Error) Error() string {
 
 // Stack returns the callstack formatted the same way that go does
 // in runtime/debug.Stack()
-func (err *Error) Stack() []byte {
+func (e *Error) Stack() []byte {
 	var buf bytes.Buffer
-
-	for _, frame := range err.StackFrames() {
+	for _, frame := range e.StackFrames() {
 		buf.WriteString(frame.String())
 	}
 
@@ -146,28 +160,28 @@ func (err *Error) Stack() []byte {
 
 // StackFrames returns an array of frames containing information about the
 // stack.
-func (err *Error) StackFrames() []StackFrame {
-	if err.frames == nil {
-		err.frames = make([]StackFrame, len(err.stack))
+func (e *Error) StackFrames() []StackFrame {
+	if e.frames == nil {
+		e.frames = make([]StackFrame, len(e.stack))
 
-		for i, pc := range err.stack {
-			err.frames[i] = NewStackFrame(pc)
+		for i, pc := range e.stack {
+			e.frames[i] = NewStackFrame(pc)
 		}
 	}
 
-	return err.frames
+	return e.frames
 }
 
 // ErrorStack returns a string that contains both the
 // error message and the callstack.
-func (err *Error) ErrorStack() string {
-	return err.TypeName() + " " + err.Error() + "\n" + string(err.Stack())
+func (e *Error) ErrorStack() string {
+	return e.TypeName() + " " + e.Error() + "\n" + string(e.Stack())
 }
 
 // TypeName returns the type this error. e.g. *errors.stringError.
-func (err *Error) TypeName() string {
-	if _, ok := err.Cause.(uncaughtPanic); ok {
+func (e *Error) TypeName() string {
+	if _, ok := e.Cause.(uncaughtPanic); ok {
 		return "panic"
 	}
-	return reflect.TypeOf(err.Cause).String()
+	return reflect.TypeOf(e.Cause).String()
 }

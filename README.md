@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.org/magicalbanana/errorx.svg?branch=master)](https://travis-ci.org/magicalbanana/errorx)
+[![Build Status](https://drone.joinpara.app/api/badges/magicalbanana/errorx/status.svg)](https://drone.joinpara.app/magicalbanana/errorx)
 [![GoDoc](https://godoc.org/github.com/magicalbanana/errorx?status.svg)](https://godoc.org/github.com/magicalbanana/errorx)
 
 # errorx

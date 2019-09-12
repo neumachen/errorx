@@ -23,10 +23,11 @@ var MaxStackDepth = 50
 // PostgreSQL error style guide.  It can be used wherever the builtin error
 // interface is expected.
 type Error struct {
-	Cause  error `json:"cause"`
-	stack  []uintptr
-	frames []StackFrame
-	prefix string
+	Cause       error `json:"cause"`
+	stackFrames []StackFrame
+	prefix      string
+	stack       []uintptr
+	frames      []StackFrame
 }
 
 // MarshalJSON ...
@@ -34,15 +35,17 @@ func (e *Error) MarshalJSON() ([]byte, error) {
 	type Alias Error
 
 	return json.Marshal(&struct {
-		Stack  []uintptr    `json:"stack,omitempty"`
-		Frames []StackFrame `json:"frames,omitempty"`
-		Prefix string       `json:"prefix,omitempty"`
+		StackFrames []StackFrame `json:"stack_frames,omitempty"`
+		Stack       []uintptr    `json:"stack,omitempty"`
+		Prefix      string       `json:"prefix,omitempty"`
+		Cause       string       `json:"cause,omitempty"`
 		*Alias
 	}{
-		Alias:  (*Alias)(e),
-		Stack:  e.stack,
-		Frames: e.frames,
-		Prefix: e.prefix,
+		Alias:       (*Alias)(e),
+		StackFrames: e.StackFrames(),
+		Stack:       e.stack,
+		Prefix:      e.prefix,
+		Cause:       e.Cause.Error(),
 	})
 }
 

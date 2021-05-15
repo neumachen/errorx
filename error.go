@@ -27,7 +27,6 @@ type Error struct {
 	stackFrames []StackFrame
 	prefix      string
 	stack       []uintptr
-	frames      []StackFrame
 }
 
 // MarshalJSON ...
@@ -164,15 +163,15 @@ func (e *Error) Stack() []byte {
 // StackFrames returns an array of frames containing information about the
 // stack.
 func (e *Error) StackFrames() []StackFrame {
-	if e.frames == nil {
-		e.frames = make([]StackFrame, len(e.stack))
+	if e.stackFrames == nil {
+		e.stackFrames = make([]StackFrame, len(e.stack))
 
 		for i, pc := range e.stack {
-			e.frames[i] = NewStackFrame(pc)
+			e.stackFrames[i] = NewStackFrame(pc)
 		}
 	}
 
-	return e.frames
+	return e.stackFrames
 }
 
 // ErrorStack returns a string that contains both the

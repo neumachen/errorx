@@ -68,7 +68,7 @@ func ParsePanic(text string) (*Error, error) {
 	}
 
 	if state == "done" || state == "parsing" {
-		return &Error{Cause: uncaughtPanic{message}, frames: stack}, nil
+		return &Error{Cause: uncaughtPanic{message}, stackFrames: stack}, nil
 	}
 	return nil, Errorf("could not parse panic: %v", text)
 }

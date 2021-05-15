@@ -2,7 +2,10 @@
 [![GoDoc](https://godoc.org/github.com/magicalbanana/errorx?status.svg)](https://godoc.org/github.com/magicalbanana/errorx)
 
 # errorx
-Feature-rich Golang error interface implementation inspired by Postgres error message style guide http://www.postgresql.org/docs/devel/static/error-style-guide.html
+This package takes great inspiration from
+[goware/errorx](https://github.com/goware/errorx.git) which gives a
+feature-rich Golang error interface implementation inspired by Postgres error
+message style guide http://www.postgresql.org/docs/devel/static/error-style-guide.html
 
 # features
 * Error codes
@@ -60,4 +63,3 @@ http://godoc.org/github.com/magicalbanana/errorx
 
 ```
 errorx_test.go:28: error 10: error message | error details; error hint
-```

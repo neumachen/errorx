@@ -36,7 +36,6 @@ func NewStackFrame(pc uintptr) (frame StackFrame) {
 	// and we want to show the line that corresponds to the function call
 	frame.File, frame.LineNumber = frame.Func().FileLine(pc - 1)
 	return
-
 }
 
 // Func returns the function that contained this frame.

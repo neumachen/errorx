@@ -1,5 +1,5 @@
-[![Build Status](https://drone.joinpara.app/api/badges/magicalbanana/errorx/status.svg)](https://drone.joinpara.app/magicalbanana/errorx)
-[![GoDoc](https://godoc.org/github.com/magicalbanana/errorx?status.svg)](https://godoc.org/github.com/magicalbanana/errorx)
+[![Build Status](https://drone.joinpara.app/api/badges/neumachen/errorx/status.svg)](https://drone.joinpara.app/neumachen/errorx)
+[![GoDoc](https://godoc.org/github.com/neumachen/errorx?status.svg)](https://godoc.org/github.com/neumachen/errorx)
 
 # errorx
 This package takes great inspiration from
@@ -18,7 +18,7 @@ message style guide http://www.postgresql.org/docs/devel/static/error-style-guid
 * JSON errors you can just write to your webhandler
 
 # docs
-http://godoc.org/github.com/magicalbanana/errorx
+http://godoc.org/github.com/neumachen/errorx
 
 # example output
 ### json, nested error, verbosity: Trace

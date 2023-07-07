@@ -3,29 +3,22 @@ package errorx
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"runtime"
 	"strings"
 )
 
-// A StackFrame contains all necessary information about to generate a line
-// in a callstack.
+// StackFrame contains information about a stack frame in a call stack.
 type StackFrame struct {
-	// The path to the file containing this ProgramCounter
-	File string `json:"file"`
-	// The LineNumber in that file
-	LineNumber int `json:"line_number"`
-	// The Name of the function that contains this ProgramCounter
-	Name string `json:"name"`
-	// The Package that contains this function
-	Package string `json:"package"`
-	// The underlying ProgramCounter
-	ProgramCounter uintptr `json:"program_counter"`
+	File           string  `json:"file"`            // The path to the file containing this ProgramCounter
+	LineNumber     int     `json:"line_number"`     // The line number in that file
+	Name           string  `json:"name"`            // The name of the function that contains this ProgramCounter
+	Package        string  `json:"package"`         // The package that contains this function
+	ProgramCounter uintptr `json:"program_counter"` // The underlying ProgramCounter
 }
 
-// NewStackFrame popoulates a stack frame object from the program counter.
+// NewStackFrame populates a StackFrame object from the program counter.
 func NewStackFrame(pc uintptr) (frame StackFrame) {
-
 	frame = StackFrame{ProgramCounter: pc}
 	if frame.Func() == nil {
 		return
@@ -46,8 +39,7 @@ func (frame *StackFrame) Func() *runtime.Func {
 	return runtime.FuncForPC(frame.ProgramCounter)
 }
 
-// String returns the stackframe formatted in the same way as go does
-// in runtime/debug.Stack()
+// String returns the formatted stack frame, similar to how Go does in runtime/debug.Stack().
 func (frame *StackFrame) String() string {
 	str := fmt.Sprintf("file:%s line_number%d (0x%x)\n", frame.File, frame.LineNumber, frame.ProgramCounter)
 
@@ -61,8 +53,7 @@ func (frame *StackFrame) String() string {
 
 // SourceLine gets the line of code (from File and Line) of the original source if possible.
 func (frame *StackFrame) SourceLine() (string, error) {
-	data, err := ioutil.ReadFile(frame.File)
-
+	data, err := os.ReadFile(frame.File)
 	if err != nil {
 		return "", New(err)
 	}
@@ -75,6 +66,7 @@ func (frame *StackFrame) SourceLine() (string, error) {
 	return string(bytes.Trim(lines[frame.LineNumber-1], " \t")), nil
 }
 
+// packageAndName extracts the package and name from the function.
 func packageAndName(fn *runtime.Func) (string, string) {
 	name := fn.Name()
 	pkg := ""

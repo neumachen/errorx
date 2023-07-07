@@ -116,7 +116,6 @@ func WrapPrefix(e interface{}, prefix string, skip int) *Error {
 // are considered equal by this function if they are the same object,
 // or if they both contain the same error inside an errors.Error.
 func Is(e error, original error) bool {
-
 	if e == original {
 		return true
 	}
@@ -136,7 +135,7 @@ func Is(e error, original error) bool {
 // as a drop-in replacement for fmt.Errorf() to provide descriptive
 // errors in return values.
 func Errorf(format string, a ...interface{}) *Error {
-	return Wrap(fmt.Errorf(format, a...), 1)
+	return Wrap(fmt.Errorf(format, a...), 2)
 }
 
 // Error returns the underlying error's message.

@@ -52,7 +52,7 @@ func (e *Error) MarshalJSON() ([]byte, error) {
 // error then it will be used directly, if not, it will be passed to
 // fmt.Errorf("%v"). The stacktrace will point to the line of code that
 // called New.
-func New(e interface{}) *Error {
+func New(e any) *Error {
 	var err error
 
 	switch e := e.(type) {
@@ -74,7 +74,7 @@ func New(e interface{}) *Error {
 // error then it will be used directly, if not, it will be passed to
 // fmt.Errorf("%v"). The skip parameter indicates how far up the stack
 // to start the stacktrace. 0 is from the current call, 1 from its caller, etc.
-func Wrap(e interface{}, skip int) *Error {
+func Wrap(e any, skip int) *Error {
 	var err error
 
 	switch e := e.(type) {
@@ -100,7 +100,7 @@ func Wrap(e interface{}, skip int) *Error {
 // error message when calling Error(). The skip parameter indicates how far
 // up the stack to start the stacktrace. 0 is from the current call,
 // 1 from its caller, etc.
-func WrapPrefix(e interface{}, prefix string, skip int) *Error {
+func WrapPrefix(e any, prefix string, skip int) *Error {
 	err := Wrap(e, skip)
 
 	if err.prefix != "" {
@@ -134,7 +134,7 @@ func Is(e error, original error) bool {
 // Errorf creates a new error with the given message. You can use it
 // as a drop-in replacement for fmt.Errorf() to provide descriptive
 // errors in return values.
-func Errorf(format string, a ...interface{}) *Error {
+func Errorf(format string, a ...any) *Error {
 	return Wrap(fmt.Errorf(format, a...), 2)
 }
 

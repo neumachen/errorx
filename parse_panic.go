@@ -18,10 +18,11 @@ func (p uncaughtPanic) Error() string {
 // converting recovered panics into error types that can be handled normally.
 //
 // The function expects the panic string to be in the standard Go runtime format:
-//   panic: <message>
-//   
-//   goroutine <id> [<state>]:
-//   <stack trace>
+//
+//	panic: <message>
+//
+//	goroutine <id> [<state>]:
+//	<stack trace>
 //
 // Returns:
 //   - Error: A structured error containing the panic information

@@ -25,7 +25,7 @@ import (
 var MaxStackDepth = 50
 
 type errorSetter interface {
-	setPrefix(string)
+	setPrefix(prefixToSet string)
 }
 
 // Error is the interface that extends Go's standard error interface with additional
@@ -144,8 +144,8 @@ func (e errorData) Error() string {
 
 // setPrefix sets or updates the error's context prefix.
 // This is an internal method used by WrapPrefix to add context to errors.
-func (e *errorData) setPrefix(prefix string) {
-	e.prefix = prefix
+func (e *errorData) setPrefix(prefixToSet string) {
+	e.prefix = prefixToSet
 }
 
 // Stack returns the callstack formatted the same way that go does

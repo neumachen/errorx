@@ -76,9 +76,17 @@ type errorJSONObject struct {
 	Prefix      string       `json:"prefix,omitempty"`
 }
 
-// errorData is a more feature rich implementation of error interface inspired by
-// PostgreSQL error style guide. It can be used wherever the builtin error
-// interface is expected.
+// errorData is the concrete implementation of the Error interface, providing
+// enhanced error handling capabilities with stack traces and error wrapping.
+//
+// It implements the Error interface while maintaining compatibility with Go's
+// built-in error interface, inspired by PostgreSQL's error handling style guide.
+//
+// The type stores:
+// - The underlying cause error
+// - Stack trace information as frames
+// - Optional prefix for context
+// - Raw stack pointers for debugging
 type errorData struct {
 	cause       error
 	stackFrames []StackFrame
@@ -86,6 +94,8 @@ type errorData struct {
 	stack       []uintptr
 }
 
+// jsonObject creates a JSON-serializable representation of the error data,
+// including the cause, stack frames, raw stack, and prefix information.
 func (e errorData) jsonObject() errorJSONObject {
 	return errorJSONObject{
 		Cause:       e.Error(),
@@ -100,14 +110,20 @@ func (e errorData) MarshalJSON() ([]byte, error) {
 	return json.Marshal(e.jsonObject())
 }
 
+// Cause returns the underlying error that caused this error.
+// If this error was created directly, returns itself.
 func (e *errorData) Cause() error {
 	return e.cause
 }
 
+// Prefix returns the error context prefix if one was set through WrapPrefix.
+// Returns an empty string if no prefix was set.
 func (e errorData) Prefix() string {
 	return e.prefix
 }
 
+// Stack returns the raw program counter values for the error's stack trace.
+// This provides low-level access to the call stack for debugging purposes.
 func (e errorData) Stack() []uintptr {
 	return e.stack
 }
@@ -126,12 +142,17 @@ func (e errorData) Error() string {
 	return msg
 }
 
+// setPrefix sets or updates the error's context prefix.
+// This is an internal method used by WrapPrefix to add context to errors.
 func (e *errorData) setPrefix(prefix string) {
 	e.prefix = prefix
 }
 
 // Stack returns the callstack formatted the same way that go does
 // in runtime/debug.Stack()
+// RuntimeStack returns a formatted byte slice of the stack trace,
+// matching the format of runtime.Stack(). This provides a familiar
+// stack trace format for logging and debugging.
 func (e errorData) RuntimeStack() []byte {
 	var buf bytes.Buffer
 	defer buf.Reset()
@@ -158,6 +179,8 @@ func (e errorData) StackFrames() []StackFrame {
 
 // ErrorRuntimeStack returns a string that contains both the
 // error message and the callstack.
+// ErrorRuntimeStack returns a formatted string containing both the error
+// message and its stack trace, useful for comprehensive error logging.
 func (e errorData) ErrorRuntimeStack() string {
 	return e.Type() + " " + e.Error() + "\n" + string(e.RuntimeStack())
 }

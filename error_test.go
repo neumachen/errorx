@@ -38,7 +38,7 @@ func TestNew(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := errorx.New(tt.input)
+			err := errorx.NewError(tt.input)
 			require.NotNil(t, err)
 			require.Equal(t, tt.wantMsg, err.Error())
 			require.Equal(t, tt.wantType, err.Type())

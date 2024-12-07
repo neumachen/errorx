@@ -138,11 +138,15 @@ func (e errorData) Type() string {
 	return reflect.TypeOf(e.cause).String()
 }
 
-// New makes an Error from the given value. If that value is already an
+func New(newErrorStr string) Error {
+	return NewError(fmt.Errorf(newErrorStr))
+}
+
+// NewError makes an Error from the given value. If that value is already an
 // error then it will be used directly, if not, it will be passed to
 // fmt.Errorf("%v"). The stacktrace will point to the line of code that
-// called New.
-func New(newError any) Error {
+// called NewError.
+func NewError(newError any) Error {
 	var cause error
 
 	switch e := newError.(type) {

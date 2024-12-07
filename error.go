@@ -1,11 +1,16 @@
-// Package errorx provides errors that have stack-traces.
+// Package errorx provides a comprehensive error handling solution with stack traces and error wrapping.
 //
-// This is particularly useful when you want to understand the
-// state of execution when an error was returned unexpectedly.
+// The package extends Go's standard error interface with additional capabilities like stack traces,
+// error wrapping, and detailed error information. It maintains compatibility with the standard
+// error interface while providing richer error context and debugging capabilities.
 //
-// It provides the type *Error which implements the standard
-// golang error interface, so you can use this library interchangably
-// with code that is expecting a normal error return.
+// Key features:
+//   - Stack trace capture and formatting
+//   - Error wrapping with cause tracking
+//   - Prefix support for error context
+//   - JSON serialization
+//   - Runtime stack information
+//   - Source line lookup
 package errorx
 
 import (

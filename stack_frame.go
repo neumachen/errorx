@@ -8,7 +8,14 @@ import (
 	"strings"
 )
 
-// StackFrame contains information about a stack frame in a call stack.
+// StackFrame represents a single frame in an error's stack trace, providing detailed
+// information about the source location, function, and program counter where the error occurred.
+//
+// Each StackFrame includes:
+//   - File path and line number of the source code
+//   - Function name and package path
+//   - Program counter for low-level debugging
+//   - Ability to retrieve the actual source line
 type StackFrame struct {
 	File           string  `json:"file"`            // The path to the file containing this ProgramCounter
 	LineNumber     int     `json:"line_number"`     // The line number in that file

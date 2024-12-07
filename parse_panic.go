@@ -12,7 +12,20 @@ func (p uncaughtPanic) Error() string {
 	return p.message
 }
 
-// ParsePanic parses the panic information from the given text and returns an Error reference.
+// ParsePanic converts a panic stack trace string into an Error instance.
+// It parses the panic message and stack trace information, creating a structured
+// error with full stack trace information. This is particularly useful for
+// converting recovered panics into error types that can be handled normally.
+//
+// The function expects the panic string to be in the standard Go runtime format:
+//   panic: <message>
+//   
+//   goroutine <id> [<state>]:
+//   <stack trace>
+//
+// Returns:
+//   - Error: A structured error containing the panic information
+//   - error: Any error that occurred during parsing
 func ParsePanic(panicToParse string) (Error, error) {
 	lines := strings.Split(panicToParse, "\n")
 

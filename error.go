@@ -28,14 +28,44 @@ type errorSetter interface {
 	setPrefix(string)
 }
 
+// Error is the interface that extends Go's standard error interface with additional
+// capabilities for error handling, stack traces, and error wrapping.
+//
+// The interface provides methods to:
+// - Access the underlying cause of the error
+// - Retrieve stack trace information
+// - Get error context through prefixes
+// - Determine error types
+// - Access formatted stack traces
 type Error interface {
 	errorSetter
+	// Cause returns the underlying error that caused this error.
+	// If this error was created directly and not through wrapping,
+	// Cause returns the error itself.
 	Cause() error
+
+	// Error returns the error message. If the error has a prefix,
+	// it will be included in the message in the format "prefix: message".
 	Error() string
+
+	// StackFrames returns the call stack as an array of StackFrame objects,
+	// providing detailed information about each call site.
 	StackFrames() []StackFrame
+
+	// Stack returns the raw program counters of the call stack.
+	// This is useful for low-level stack trace analysis.
 	Stack() []uintptr
+
+	// Prefix returns any prefix string that was added to this error
+	// through WrapPrefix. Returns empty string if no prefix was set.
 	Prefix() string
+
+	// Type returns the underlying error type as a string.
+	// For panic errors, it returns "panic".
 	Type() string
+
+	// RuntimeStack returns a formatted byte slice containing the
+	// full stack trace in the same format as runtime.Stack().
 	RuntimeStack() []byte
 }
 

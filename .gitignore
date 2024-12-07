@@ -1,0 +1,26 @@
+# Binaries and build output
+**/vendor
+**/*.out
+**/bin
+**/*.exe
+**/*.dll
+**/*.so
+**/*.dylib
+
+# Test files
+**/*.test
+**/coverage.txt
+**/coverage.html
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Go specific
+**/*.o
+**/*.a
+**/*.test
+**/*.prof

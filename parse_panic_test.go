@@ -1,6 +1,7 @@
 package errorx
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -156,8 +157,8 @@ func TestParsePanic(t *testing.T) {
 		}
 
 		require.Equal(t, errx.StackFrames(), result)
-		// if !reflect.DeepEqual(errx.StackFrames(), result) {
-		// 	t.Errorf("Wrong stack for %s: %#v", key, errx.StackFrames())
-		// }
+		if !reflect.DeepEqual(errx.StackFrames(), result) {
+			t.Errorf("Wrong stack for %s: %#v", key, errx.StackFrames())
+		}
 	}
 }

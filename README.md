@@ -1,58 +1,99 @@
 # errorx
 
-This package takes great inspiration from [goware/errorx](https://github.com/goware/errorx.git) which gives a feature-rich Golang error interface implementation inspired by Postgres error message style guide http://www.postgresql.org/docs/devel/static/error-style-guide.html
+A comprehensive error handling package for Go that provides rich error context, stack traces, and error wrapping capabilities.
 
-# features
+## Features
 
-- Error codes
-- Verbosity levels
-- **File and line on which the error occures** (Debug+ verbosity level). Not 100% accurate, but close enough: shows file/line where errorx is rendered to string/JSON
-- error Stack traces (on verbosity level Trace)
-- Nested errors (both regular Golang `error` and `Errorx`)
-- Everything Golang `error` has - it's a drop-in replacement, because it implements `error` interface
-- Everything Golang `errors` package provides
-- JSON errors you can just write to your webhandler
+- Detailed stack traces with source line information
+- Error wrapping with cause tracking
+- Prefix support for error context
+- JSON serialization
+- Panic recovery and parsing
+- Full compatibility with Go's standard error interface
+- Comprehensive testing suite
 
-# docs
+## Installation
 
-http://godoc.org/github.com/neumachen/errorx
+```bash
+go get github.com/neumachen/errorx
+```
 
-# example output
+## Key Features
 
-### json, nested error, verbosity: Trace
+- **Stack Traces**: Capture and format detailed stack traces with source line information
+- **Error Wrapping**: Wrap errors while preserving the original error and adding context
+- **Error Context**: Add prefixes to errors for better error context
+- **Type Information**: Access underlying error types and causes
+- **JSON Support**: Serialize errors to JSON for API responses
+- **Source Line Info**: Get exact file and line information for debugging
+- **Panic Handling**: Parse and convert panics into structured errors
+
+## Usage
+
+### Creating Errors
+
+```go
+// Create a new error
+err := errorx.New("something went wrong")
+
+// Create a formatted error
+err := errorx.Errorf("failed to process %s", item)
+
+// Wrap an existing error
+err := errorx.Wrap(existingError, 0)
+
+// Add context with prefix
+err := errorx.WrapPrefix(err, "validation failed", 0)
+```
+
+### Accessing Error Information
+
+```go
+// Get the original cause
+cause := err.Cause()
+
+// Get stack frames
+frames := err.StackFrames()
+
+// Get error type
+errType := err.Type()
+
+// Get formatted stack trace
+stack := err.RuntimeStack()
+
+// Get error with context prefix
+fmt.Println(err.Error()) // "validation failed: something went wrong"
+```
+
+### JSON Output Example
 
 ```json
 {
-  "error_code": 10,
-  "error_message": "error message",
-  "error_details": ["error details", "error hint"],
-  "cause": {
-    "error_code": 200,
-    "error_message": "wrapped error message",
-    "error_details": ["wrapped error details", "wrapped error hint"]
-  },
-  "stack": [
+  "cause": "something went wrong",
+  "stack_frames": [
     {
-      "file": "errorx_test.go",
-      "line": 175,
-      "function": "github.com/goware/errorx_test.TestJsonErrorEmbedding"
-    },
-    {
-      "file": "testing.go",
-      "line": 447,
-      "function": "testing.tRunner"
-    },
-    {
-      "file": "asm_amd64.s",
-      "line": 2232,
-      "function": "runtime.goexit"
+      "file": "/path/to/file.go",
+      "line_number": 42,
+      "name": "FunctionName",
+      "package": "package/path"
     }
-  ]
+  ],
+  "prefix": "validation failed"
 }
 ```
 
-### string (via .Error()), verbosity: Debug
+## Documentation
 
+For detailed documentation and examples, see the [Go package documentation](https://pkg.go.dev/github.com/neumachen/errorx).
+
+## Testing
+
+The package includes a comprehensive test suite. Run the tests with:
+
+```bash
+go test -v ./...
 ```
-errorx_test.go:28: error 10: error message | error details; error hint
-```
+
+## License
+
+See [LICENSE](LICENSE.md) file for details.

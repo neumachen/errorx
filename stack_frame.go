@@ -18,52 +18,52 @@ type StackFrame struct {
 }
 
 // NewStackFrame populates a StackFrame object from the program counter.
-func NewStackFrame(pc uintptr) (frame StackFrame) {
-	frame = StackFrame{ProgramCounter: pc}
-	if frame.Func() == nil {
-		return
+func NewStackFrame(newProgramCounter uintptr) StackFrame {
+	newStackFrame := StackFrame{ProgramCounter: newProgramCounter}
+	if newStackFrame.Func() == nil {
+		return newStackFrame
 	}
-	frame.Package, frame.Name = packageAndName(frame.Func())
+	newStackFrame.Package, newStackFrame.Name = packageAndName(newStackFrame.Func())
 
 	// pc -1 because the program counters we use are usually return addresses,
 	// and we want to show the line that corresponds to the function call
-	frame.File, frame.LineNumber = frame.Func().FileLine(pc - 1)
-	return
+	newStackFrame.File, newStackFrame.LineNumber = newStackFrame.Func().FileLine(newProgramCounter - 1)
+	return newStackFrame
 }
 
 // Func returns the function that contained this frame.
-func (frame *StackFrame) Func() *runtime.Func {
-	if frame.ProgramCounter == 0 {
+func (s StackFrame) Func() *runtime.Func {
+	if s.ProgramCounter == 0 {
 		return nil
 	}
-	return runtime.FuncForPC(frame.ProgramCounter)
+	return runtime.FuncForPC(s.ProgramCounter)
 }
 
 // String returns the formatted stack frame, similar to how Go does in runtime/debug.Stack().
-func (frame *StackFrame) String() string {
-	str := fmt.Sprintf("file:%s line_number%d (0x%x)\n", frame.File, frame.LineNumber, frame.ProgramCounter)
+func (s StackFrame) String() string {
+	str := fmt.Sprintf("file:%s line_number%d (0x%x)\n", s.File, s.LineNumber, s.ProgramCounter)
 
-	source, err := frame.SourceLine()
+	source, err := s.SourceLine()
 	if err != nil {
 		return str
 	}
 
-	return str + fmt.Sprintf("\t%s: %s\n", frame.Name, source)
+	return str + fmt.Sprintf("\t%s: %s\n", s.Name, source)
 }
 
 // SourceLine gets the line of code (from File and Line) of the original source if possible.
-func (frame *StackFrame) SourceLine() (string, error) {
-	data, err := os.ReadFile(frame.File)
+func (s *StackFrame) SourceLine() (string, error) {
+	data, err := os.ReadFile(s.File)
 	if err != nil {
-		return "", New(err)
+		return "", NewError(err)
 	}
 
 	lines := bytes.Split(data, []byte{'\n'})
-	if frame.LineNumber <= 0 || frame.LineNumber >= len(lines) {
+	if s.LineNumber <= 0 || s.LineNumber >= len(lines) {
 		return "???", nil
 	}
 	// -1 because line-numbers are 1 based, but our array is 0 based
-	return string(bytes.Trim(lines[frame.LineNumber-1], " \t")), nil
+	return string(bytes.Trim(lines[s.LineNumber-1], " \t")), nil
 }
 
 // packageAndName extracts the package and name from the function.

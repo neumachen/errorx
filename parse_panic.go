@@ -13,11 +13,10 @@ func (p uncaughtPanic) Error() string {
 }
 
 // ParsePanic parses the panic information from the given text and returns an Error reference.
-func ParsePanic(text string) (*Error, error) {
-	lines := strings.Split(text, "\n")
+func ParsePanic(panicToParse string) (Error, error) {
+	lines := strings.Split(panicToParse, "\n")
 
 	state := "start"
-
 	var message string
 	var stack []StackFrame
 
@@ -66,9 +65,9 @@ func ParsePanic(text string) (*Error, error) {
 	}
 
 	if state == "done" || state == "parsing" {
-		return &Error{Cause: uncaughtPanic{message}, stackFrames: stack}, nil
+		return &errorData{cause: uncaughtPanic{message}, stackFrames: stack}, nil
 	}
-	return nil, Errorf("could not parse panic: %v", text)
+	return nil, Errorf("could not parse panic: %v", panicToParse)
 }
 
 // parsePanicFrame parses a single stack frame from the panic information.

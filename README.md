@@ -1,6 +1,6 @@
 # errorx
 
-A comprehensive error handling package for Go that provides rich error context, stack traces, and error wrapping capabilities.
+A comprehensive extension of the error handling package for Go that provides rich error context, stack traces, and error wrapping capabilities.
 
 ## Features
 

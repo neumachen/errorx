@@ -42,7 +42,7 @@ func ParsePanic(panicToParse string) (Error, error) {
 				message = strings.TrimPrefix(line, "panic: ")
 				state = "seek"
 			} else {
-				return nil, Errorf("errorx.PanicParser: Invalid line (no prefix): %s", line)
+				return nil, NewErrorf("errorx.PanicParser: Invalid line (no prefix): %s", line)
 			}
 		} else if state == "seek" {
 			if strings.HasPrefix(line, "goroutine ") && strings.HasSuffix(line, "[running]:") {
@@ -62,7 +62,7 @@ func ParsePanic(panicToParse string) (Error, error) {
 			i++
 
 			if i >= len(lines) {
-				return nil, Errorf("errorx.PanicParser: Invalid line (unpaired): %s", line)
+				return nil, NewErrorf("errorx.PanicParser: Invalid line (unpaired): %s", line)
 			}
 
 			frame, err := parsePanicFrame(line, lines[i], createdBy)
@@ -81,14 +81,14 @@ func ParsePanic(panicToParse string) (Error, error) {
 	if state == "done" || state == "parsing" {
 		return &errorData{cause: uncaughtPanic{message}, stackFrames: stack}, nil
 	}
-	return nil, Errorf("could not parse panic: %v", panicToParse)
+	return nil, NewErrorf("could not parse panic: %v", panicToParse)
 }
 
 // parsePanicFrame parses a single stack frame from the panic information.
 func parsePanicFrame(name string, line string, createdBy bool) (*StackFrame, error) {
 	idx := strings.LastIndex(name, "(")
 	if idx == -1 && !createdBy {
-		return nil, Errorf("errorx.PanicParser: Invalid line (no call): %s", name)
+		return nil, NewErrorf("errorx.PanicParser: Invalid line (no call): %s", name)
 	}
 	if idx != -1 {
 		name = name[:idx]
@@ -107,12 +107,12 @@ func parsePanicFrame(name string, line string, createdBy bool) (*StackFrame, err
 	name = strings.Replace(name, "·", ".", -1)
 
 	if !strings.HasPrefix(line, "\t") {
-		return nil, Errorf("errorx.PanicParser: Invalid line (no tab): %s", line)
+		return nil, NewErrorf("errorx.PanicParser: Invalid line (no tab): %s", line)
 	}
 
 	idx = strings.LastIndex(line, ":")
 	if idx == -1 {
-		return nil, Errorf("errorx.PanicParser: Invalid line (no line number): %s", line)
+		return nil, NewErrorf("errorx.PanicParser: Invalid line (no line number): %s", line)
 	}
 	file := line[1:idx]
 
@@ -123,7 +123,7 @@ func parsePanicFrame(name string, line string, createdBy bool) (*StackFrame, err
 
 	lno, err := strconv.ParseInt(number, 10, 32)
 	if err != nil {
-		return nil, Errorf("errorx.PanicParser: Invalid line (bad line number): %s", line)
+		return nil, NewErrorf("errorx.PanicParser: Invalid line (bad line number): %s", line)
 	}
 
 	return &StackFrame{

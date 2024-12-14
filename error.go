@@ -70,7 +70,7 @@ type Error interface {
 
 	Metadata() *json.RawMessage
 	UnmarshalMetadata(unmarshalerFunc json.Unmarshaler) error
-	SetMetadata(metadata interface{}) error
+	SetMetadata(metadata *json.RawMessage) error
 }
 
 type errorJSONObject struct {
@@ -146,16 +146,9 @@ func (e errorData) UnmarshalMetadata(unmarshalerFunc json.Unmarshaler) error {
 	return unmarshalerFunc.UnmarshalJSON(*e.metadata)
 }
 
-// SetMetadata marshals the provided metadata interface into JSON and sets it as the error's metadata.
-// Returns an error if the marshaling fails.
-func (e *errorData) SetMetadata(metadata interface{}) error {
-	rawJSON, err := json.Marshal(metadata)
-	if err != nil {
-		return fmt.Errorf("failed to marshal metadata: %v", err)
-	}
-	
-	rawMessage := json.RawMessage(rawJSON)
-	e.metadata = &rawMessage
+// SetMetadata sets the provided JSON raw message as the error's metadata.
+func (e *errorData) SetMetadata(metadata *json.RawMessage) error {
+	e.metadata = metadata
 	return nil
 }
 

@@ -3,7 +3,7 @@ package errorx_test
 import (
 	"errors"
 	"fmt"
-	"json"
+	"encoding/json"
 	"testing"
 
 	"github.com/neumachen/errorx"
@@ -115,21 +115,28 @@ func TestErrorMetadataUnmarshal(t *testing.T) {
 	})
 }
 
-func TestErrorJSONObject(t *testing.T) {
-	t.Run("jsonObject includes all fields", func(t *testing.T) {
-		err := errorx.NewError(fmt.Errorf("test error"))
+func TestErrorJSON(t *testing.T) {
+	t.Run("Marshal/Unmarshal error", func(t *testing.T) {
+		// Create error with metadata
+		originalErr := errorx.NewError(fmt.Errorf("test error"))
 		metadata := json.RawMessage(`{"key": "value"}`)
-		err.SetMetadata(&metadata)
+		err := originalErr.SetMetadata(&metadata)
+		require.NoError(t, err)
 
-		errData, ok := err.(*errorx.errorData)
-		require.True(t, ok)
+		// Marshal to JSON
+		jsonBytes, err := json.Marshal(originalErr)
+		require.NoError(t, err)
+		require.NotEmpty(t, jsonBytes)
 
-		obj := errData.jsonObject()
-		require.Equal(t, err.Error(), obj.Cause)
-		require.Equal(t, err.StackFrames(), obj.StackFrames)
-		require.Equal(t, err.Stack(), obj.Stack)
-		require.Equal(t, err.Prefix(), obj.Prefix)
-		require.Equal(t, err.Metadata(), obj.Metadata)
+		// Unmarshal and verify fields
+		var unmarshaled map[string]interface{}
+		err = json.Unmarshal(jsonBytes, &unmarshaled)
+		require.NoError(t, err)
+
+		require.Equal(t, "test error", unmarshaled["cause"])
+		require.NotEmpty(t, unmarshaled["stack_frames"])
+		require.NotEmpty(t, unmarshaled["stack"])
+		require.Contains(t, unmarshaled, "metadata")
 	})
 }
 

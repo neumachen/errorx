@@ -127,6 +127,7 @@ func (e errorData) jsonObject() errorJSONObject {
 		StackFrames: e.StackFrames(),
 		Stack:       e.Stack(),
 		Prefix:      e.Prefix(),
+		Metadata:    e.metadata,
 	}
 }
 

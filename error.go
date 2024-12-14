@@ -28,11 +28,13 @@ var MaxStackDepth = 50
 // This interface allows for progressive enhancement of errors with additional
 // context and metadata.
 type ErrorSetter interface {
-	// setPrefix sets or updates the error's context prefix
+	// setPrefix sets or updates the error's context prefix.
+	// This is an internal method used by WrapPrefix to add context to errors.
 	setPrefix(prefixToSet string)
 	
-	// SetMetadata sets the error's metadata as a JSON raw message
-	// Returns an error if the operation fails
+	// SetMetadata sets the error's metadata as a JSON raw message.
+	// The metadata is stored as json.RawMessage to properly handle nested JSON structures
+	// without escaping issues. Returns an error if the operation fails.
 	SetMetadata(metadataToSet *json.RawMessage) error
 }
 
@@ -120,7 +122,7 @@ type errorData struct {
 }
 
 // jsonObject creates a JSON-serializable representation of the error data,
-// including the cause, stack frames, raw stack, and prefix information.
+// including the cause, stack frames, raw stack, prefix information, and metadata.
 func (e errorData) jsonObject() errorJSONObject {
 	return errorJSONObject{
 		Cause:       e.Error(),

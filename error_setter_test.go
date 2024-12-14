@@ -40,4 +40,34 @@ func TestErrorSetter(t *testing.T) {
 		require.NoError(t, setErr)
 		require.Equal(t, &metadata2, err.Metadata())
 	})
+
+	t.Run("UnmarshalMetadata with valid data", func(t *testing.T) {
+		type TestMetadata struct {
+			Key   string `json:"key"`
+			Value int    `json:"value"`
+		}
+		err := New("test error")
+		metadata := json.RawMessage(`{"key": "test", "value": 123}`)
+		
+		setErr := err.SetMetadata(&metadata)
+		require.NoError(t, setErr)
+
+		var result TestMetadata
+		unmarshalErr := err.UnmarshalMetadata(&result)
+		require.NoError(t, unmarshalErr)
+		require.Equal(t, "test", result.Key)
+		require.Equal(t, 123, result.Value)
+	})
+
+	t.Run("UnmarshalMetadata with nil metadata", func(t *testing.T) {
+		type TestMetadata struct {
+			Key string `json:"key"`
+		}
+		err := New("test error")
+		
+		var result TestMetadata
+		unmarshalErr := err.UnmarshalMetadata(&result)
+		require.NoError(t, unmarshalErr)
+		require.Empty(t, result.Key)
+	})
 }

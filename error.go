@@ -76,7 +76,13 @@ type Error interface {
 	// full stack trace in the same format as runtime.Stack().
 	RuntimeStack() []byte
 
+	// Metadata returns the error's associated metadata as a JSON raw message.
+	// Returns nil if no metadata has been set.
 	Metadata() *json.RawMessage
+
+	// UnmarshalMetadata attempts to unmarshal the error's metadata into the provided unmarshaler.
+	// If no metadata is set, returns nil. Otherwise, delegates to the unmarshaler's UnmarshalJSON method.
+	// Returns an error if unmarshaling fails.
 	UnmarshalMetadata(unmarshalerFunc json.Unmarshaler) error
 }
 

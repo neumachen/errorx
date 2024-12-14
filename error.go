@@ -67,13 +67,17 @@ type Error interface {
 	// RuntimeStack returns a formatted byte slice containing the
 	// full stack trace in the same format as runtime.Stack().
 	RuntimeStack() []byte
+
+	Metadata() *json.RawMessage
+	UnmarshalMetadata(unmarshalerFunc json.Unmarshaler) error
 }
 
 type errorJSONObject struct {
-	Cause       string       `json:"cause,omitempty"`
-	StackFrames []StackFrame `json:"stack_frames,omitempty"`
-	Stack       []uintptr    `json:"stack,omitempty"`
-	Prefix      string       `json:"prefix,omitempty"`
+	Cause       string           `json:"cause,omitempty"`
+	StackFrames []StackFrame     `json:"stack_frames,omitempty"`
+	Stack       []uintptr        `json:"stack,omitempty"`
+	Prefix      string           `json:"prefix,omitempty"`
+	Metadata    *json.RawMessage `json:"metadata,omitempty"`
 }
 
 // errorData is the concrete implementation of the Error interface, providing
@@ -92,6 +96,7 @@ type errorData struct {
 	stackFrames []StackFrame
 	prefix      string
 	stack       []uintptr
+	metadata    *json.RawMessage
 }
 
 // jsonObject creates a JSON-serializable representation of the error data,
@@ -126,6 +131,18 @@ func (e errorData) Prefix() string {
 // This provides low-level access to the call stack for debugging purposes.
 func (e errorData) Stack() []uintptr {
 	return e.stack
+}
+
+func (e errorData) Metadata() *json.RawMessage {
+	return e.metadata
+}
+
+func (e errorData) UnmarshalMetadata(unmarshalerFunc json.Unmarshaler) error {
+	if e.metadata == nil {
+		return nil
+	}
+
+	return unmarshalerFunc.UnmarshalJSON(*e.metadata)
 }
 
 // Error returns the underlying error's message.
@@ -246,6 +263,13 @@ func Wrap(errToWrap any, stackToSkip int) Error {
 	}
 }
 
+// NewErrorf creates a new error with the given message. You can use it
+// as a drop-in replacement for fmt.NewErrorf() to provide descriptive
+// errors in return values.
+func NewErrorf(format string, a ...any) Error {
+	return Wrap(fmt.Errorf(format, a...), 2)
+}
+
 // WrapPrefix makes an Error from the given value. If that value is already an
 // error then it will be used directly, if not, it will be passed to
 // fmt.Errorf("%v"). The prefix parameter is used to add a prefix to the
@@ -281,11 +305,4 @@ func Is(comparedTo error, target error) bool {
 	}
 
 	return false
-}
-
-// Errorf creates a new error with the given message. You can use it
-// as a drop-in replacement for fmt.Errorf() to provide descriptive
-// errors in return values.
-func Errorf(format string, a ...any) Error {
-	return Wrap(fmt.Errorf(format, a...), 2)
 }

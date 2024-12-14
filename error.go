@@ -274,22 +274,22 @@ func NewError(cause error) Error {
 // error then it will be used directly, if not, it will be passed to
 // fmt.Errorf("%v"). The stackToSkip parameter indicates how far up the stack
 // to start the stacktrace. 0 is from the current call, 1 from its caller, etc.
-func Wrap(errToWrap any, stackToSkip int) Error {
-	var err error
+func Wrap(errToWrap error, stackToSkip int) Error {
+	var cause error
 
 	switch e := errToWrap.(type) {
 	case *errorData:
 		return e
 	case error:
-		err = e
+		cause = e
 	default:
-		err = fmt.Errorf("%v", e)
+		cause = fmt.Errorf("%v", e)
 	}
 
 	stack := make([]uintptr, MaxStackDepth)
 	length := runtime.Callers(2+stackToSkip, stack[:])
 	return &errorData{
-		cause: err,
+		cause: cause,
 		stack: stack[:length],
 	}
 }
@@ -307,13 +307,13 @@ func NewErrorf(format string, a ...any) Error {
 // error message when calling Error(). The skip parameter indicates how far
 // up the stack to start the stacktrace. 0 is from the current call,
 // 1 from its caller, etc.
-func WrapPrefix(e any, prefix string, skip int) Error {
-	err := Wrap(e, skip)
+func WrapPrefix(cause error, prefixToWrap string, skip int) Error {
+	err := Wrap(cause, skip)
 
 	if err.Prefix() != "" {
-		err.setPrefix(fmt.Sprintf("%s: %s", prefix, err.Prefix()))
+		err.setPrefix(fmt.Sprintf("%s: %s", prefixToWrap, err.Prefix()))
 	} else {
-		err.setPrefix(prefix)
+		err.setPrefix(prefixToWrap)
 	}
 
 	return err

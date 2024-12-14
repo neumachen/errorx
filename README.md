@@ -90,14 +90,16 @@ err.UnmarshalMetadata(&ctx)
       "file": "/path/to/file.go",
       "line_number": 42,
       "name": "FunctionName",
-      "package": "package/path"
+      "package": "package/path",
+      "program_counter": "0x1234567"
     }
   ],
   "prefix": "validation failed",
   "metadata": {
     "user_id": 123,
     "request_id": "abc-123"
-  }
+  },
+  "stack": ["0x1234567", "0x89abcdef"]
 }
 ```
 

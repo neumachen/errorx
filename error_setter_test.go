@@ -70,4 +70,20 @@ func TestErrorSetter(t *testing.T) {
 		require.NoError(t, unmarshalErr)
 		require.Empty(t, result.Key)
 	})
+
+	t.Run("jsonObject includes all fields", func(t *testing.T) {
+		err := New("test error")
+		metadata := json.RawMessage(`{"key": "value"}`)
+		err.SetMetadata(&metadata)
+
+		errData, ok := err.(*errorData)
+		require.True(t, ok)
+
+		obj := errData.jsonObject()
+		require.Equal(t, err.Error(), obj.Cause)
+		require.Equal(t, err.StackFrames(), obj.StackFrames)
+		require.Equal(t, err.Stack(), obj.Stack)
+		require.Equal(t, err.Prefix(), obj.Prefix)
+		require.Equal(t, err.Metadata(), obj.Metadata)
+	})
 }

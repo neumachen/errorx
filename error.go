@@ -78,6 +78,12 @@ type Error interface {
 
 	// Metadata returns the error's associated metadata as a JSON raw message.
 	// Returns nil if no metadata has been set.
+	//
+	// json.RawMessage is used instead of []byte to ensure proper JSON handling:
+	// 1. It preserves the exact JSON encoding of the metadata
+	// 2. Prevents double-escaping of nested JSON objects
+	// 3. Maintains the original structure when marshaling/unmarshaling
+	// 4. Allows for delayed parsing of the JSON content
 	Metadata() *json.RawMessage
 
 	// UnmarshalMetadata attempts to unmarshal the error's metadata into the provided target.
@@ -165,6 +171,8 @@ func (e errorData) UnmarshalMetadata(target any) error {
 }
 
 // SetMetadata sets the provided JSON raw message as the error's metadata.
+// Uses json.RawMessage to properly handle nested JSON structures without escaping issues
+// that can occur with regular []byte when the metadata contains nested JSON objects.
 func (e *errorData) SetMetadata(metadata *json.RawMessage) error {
 	e.metadata = metadata
 	return nil

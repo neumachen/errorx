@@ -33,8 +33,6 @@ go get github.com/neumachen/errorx
 ### Creating Errors
 
 ```go
-// Create a new error
-err := errorx.New("something went wrong")
 
 // Create a formatted error
 err := errorx.Errorf("failed to process %s", item)

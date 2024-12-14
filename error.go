@@ -249,11 +249,6 @@ func (e errorData) Type() string {
 	return reflect.TypeOf(e.cause).String()
 }
 
-// New creates a new Error with the given string message.
-// It's a convenience wrapper around NewError(fmt.Errorf()).
-func New(msg string) Error {
-	return NewError(fmt.Errorf(msg))
-}
 
 // NewError creates an Error from the given error value.
 // The stacktrace will point to the line of code that called NewError.

@@ -2,6 +2,7 @@ package errorx
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -9,7 +10,7 @@ import (
 
 func TestErrorSetter(t *testing.T) {
 	t.Run("SetMetadata with valid JSON", func(t *testing.T) {
-		err := New("test error")
+		err := NewError(fmt.Errorf("test error"))
 		metadata := json.RawMessage(`{"key": "value"}`)
 
 		setErr := err.SetMetadata(&metadata)
@@ -19,7 +20,7 @@ func TestErrorSetter(t *testing.T) {
 	})
 
 	t.Run("SetMetadata with nil", func(t *testing.T) {
-		err := New("test error")
+		err := NewError(fmt.Errorf("test error"))
 
 		setErr := err.SetMetadata(nil)
 		require.NoError(t, setErr)
@@ -28,7 +29,7 @@ func TestErrorSetter(t *testing.T) {
 	})
 
 	t.Run("SetMetadata can be updated", func(t *testing.T) {
-		err := New("test error")
+		err := NewError(fmt.Errorf("test error"))
 		metadata1 := json.RawMessage(`{"first": true}`)
 		metadata2 := json.RawMessage(`{"second": true}`)
 
@@ -46,7 +47,7 @@ func TestErrorSetter(t *testing.T) {
 			Key   string `json:"key"`
 			Value int    `json:"value"`
 		}
-		err := New("test error")
+		err := NewError(fmt.Errorf("test error"))
 		metadata := json.RawMessage(`{"key": "test", "value": 123}`)
 
 		setErr := err.SetMetadata(&metadata)
@@ -63,7 +64,7 @@ func TestErrorSetter(t *testing.T) {
 		type TestMetadata struct {
 			Key string `json:"key"`
 		}
-		err := New("test error")
+		err := NewError(fmt.Errorf("test error"))
 
 		var result TestMetadata
 		unmarshalErr := err.UnmarshalMetadata(&result)
@@ -72,7 +73,7 @@ func TestErrorSetter(t *testing.T) {
 	})
 
 	t.Run("jsonObject includes all fields", func(t *testing.T) {
-		err := New("test error")
+		err := NewError(fmt.Errorf("test error"))
 		metadata := json.RawMessage(`{"key": "value"}`)
 		err.SetMetadata(&metadata)
 

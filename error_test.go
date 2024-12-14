@@ -51,7 +51,7 @@ func TestWrap(t *testing.T) {
 	wrapError := errors.New("wrapped error")
 	tests := []struct {
 		name      string
-		err       any
+		err       error
 		skip      int
 		wantMsg   string
 		wantCause error
@@ -65,13 +65,13 @@ func TestWrap(t *testing.T) {
 		},
 		{
 			name:    "wrap string",
-			err:     "string error",
+			err:     fmt.Errorf("string error"),
 			skip:    0,
 			wantMsg: "string error",
 		},
 		{
 			name:    "wrap with skip",
-			err:     "skipped error",
+			err:     fmt.Errorf("skipped error"),
 			skip:    1,
 			wantMsg: "skipped error",
 		},
@@ -93,7 +93,7 @@ func TestWrap(t *testing.T) {
 func TestWrapPrefix(t *testing.T) {
 	tests := []struct {
 		name     string
-		err      any
+		err      error
 		prefix   string
 		skip     int
 		wantMsg  string
@@ -101,7 +101,7 @@ func TestWrapPrefix(t *testing.T) {
 	}{
 		{
 			name:     "basic prefix",
-			err:      "base error",
+			err:      fmt.Errorf("base error"),
 			prefix:   "prefix",
 			skip:     0,
 			wantMsg:  "prefix: base error",
@@ -109,7 +109,7 @@ func TestWrapPrefix(t *testing.T) {
 		},
 		{
 			name:     "multiple prefixes",
-			err:      errorx.WrapPrefix("base error", "prefix1", 0),
+			err:      errorx.WrapPrefix(fmt.Errorf("base error"), "prefix1", 0),
 			prefix:   "prefix2",
 			skip:     0,
 			wantMsg:  "prefix2: prefix1: base error",

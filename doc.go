@@ -34,7 +34,7 @@ Key Functions:
 
 Creating Errors:
 
-	err := errorx.New("something went wrong")
+	err := errorx.NewError(fmt.Errorf("something went wrong"))
 	err := errorx.Errorf("failed to process %s", item)
 	err := errorx.NewError(existingError)
 

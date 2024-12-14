@@ -9,29 +9,29 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestNew(t *testing.T) {
+func TestNewError(t *testing.T) {
 	tests := []struct {
 		name     string
-		input    any
+		input    error
 		wantMsg  string
 		wantType string
 	}{
 		{
-			name:     "string input",
-			input:    "test error",
+			name:     "basic error",
+			input:    errors.New("test error"),
 			wantMsg:  "test error",
 			wantType: "*errors.errorString",
 		},
 		{
-			name:     "error input",
-			input:    errors.New("wrapped error"),
-			wantMsg:  "wrapped error",
+			name:     "formatted error",
+			input:    fmt.Errorf("formatted %s", "error"),
+			wantMsg:  "formatted error",
 			wantType: "*errors.errorString",
 		},
 		{
-			name:     "formatted input",
-			input:    fmt.Errorf("formatted %s", "error"),
-			wantMsg:  "formatted error",
+			name:     "nil error",
+			input:    nil,
+			wantMsg:  "",
 			wantType: "*errors.errorString",
 		},
 	}

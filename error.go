@@ -31,7 +31,7 @@ type ErrorSetter interface {
 	// setPrefix sets or updates the error's context prefix.
 	// This is an internal method used by WrapPrefix to add context to errors.
 	setPrefix(prefixToSet string)
-	
+
 	// SetMetadata sets the error's metadata as a JSON raw message.
 	// The metadata is stored as json.RawMessage to properly handle nested JSON structures
 	// without escaping issues. Returns an error if the operation fails.
@@ -249,22 +249,17 @@ func (e errorData) Type() string {
 	return reflect.TypeOf(e.cause).String()
 }
 
-func New(newErrorStr string) Error {
-	return NewError(fmt.Errorf(newErrorStr))
+// New creates a new Error with the given string message.
+// It's a convenience wrapper around NewError(fmt.Errorf()).
+func New(msg string) Error {
+	return NewError(fmt.Errorf(msg))
 }
 
-// NewError makes an Error from the given value. If that value is already an
-// error then it will be used directly, if not, it will be passed to
-// fmt.Errorf("%v"). The stacktrace will point to the line of code that
-// called NewError.
-func NewError(newError any) Error {
-	var cause error
-
-	switch e := newError.(type) {
-	case error:
-		cause = e
-	default:
-		cause = fmt.Errorf("%v", e)
+// NewError creates an Error from the given error value.
+// The stacktrace will point to the line of code that called NewError.
+func NewError(cause error) Error {
+	if cause == nil {
+		cause = fmt.Errorf("")
 	}
 
 	stack := make([]uintptr, MaxStackDepth)

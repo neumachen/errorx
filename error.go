@@ -24,8 +24,9 @@ import (
 // MaxStackDepth is the maximum number of stackframes on any error.
 var MaxStackDepth = 50
 
-type errorSetter interface {
+type ErrorSetter interface {
 	setPrefix(prefixToSet string)
+	SetMetadata(metadataToSet *json.RawMessage) error
 }
 
 // Error is the interface that extends Go's standard error interface with additional
@@ -38,7 +39,7 @@ type errorSetter interface {
 // - Determine error types
 // - Access formatted stack traces
 type Error interface {
-	errorSetter
+	ErrorSetter
 	// Cause returns the underlying error that caused this error.
 	// If this error was created directly and not through wrapping,
 	// Cause returns the error itself.
@@ -70,7 +71,6 @@ type Error interface {
 
 	Metadata() *json.RawMessage
 	UnmarshalMetadata(unmarshalerFunc json.Unmarshaler) error
-	SetMetadata(metadata *json.RawMessage) error
 }
 
 type errorJSONObject struct {

@@ -80,10 +80,10 @@ type Error interface {
 	// Returns nil if no metadata has been set.
 	Metadata() *json.RawMessage
 
-	// UnmarshalMetadata attempts to unmarshal the error's metadata into the provided interface{}.
+	// UnmarshalMetadata attempts to unmarshal the error's metadata into the provided target.
 	// If no metadata is set, returns nil. Otherwise, uses json.Unmarshal to populate the target.
 	// Returns an error if unmarshaling fails.
-	UnmarshalMetadata(target interface{}) error
+	UnmarshalMetadata(target any) error
 }
 
 type errorJSONObject struct {
@@ -156,7 +156,7 @@ func (e errorData) Metadata() *json.RawMessage {
 
 // UnmarshalMetadata attempts to unmarshal the error's metadata into the provided unmarshaler.
 // If no metadata is set, returns nil. Otherwise, delegates to the unmarshaler's UnmarshalJSON method.
-func (e errorData) UnmarshalMetadata(target interface{}) error {
+func (e errorData) UnmarshalMetadata(target any) error {
 	if e.metadata == nil {
 		return nil
 	}

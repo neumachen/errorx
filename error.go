@@ -24,8 +24,15 @@ import (
 // MaxStackDepth is the maximum number of stackframes on any error.
 var MaxStackDepth = 50
 
+// ErrorSetter defines methods for modifying error properties after creation.
+// This interface allows for progressive enhancement of errors with additional
+// context and metadata.
 type ErrorSetter interface {
+	// setPrefix sets or updates the error's context prefix
 	setPrefix(prefixToSet string)
+	
+	// SetMetadata sets the error's metadata as a JSON raw message
+	// Returns an error if the operation fails
 	SetMetadata(metadataToSet *json.RawMessage) error
 }
 

@@ -63,6 +63,21 @@ stack := err.RuntimeStack()
 
 // Get error with context prefix
 fmt.Println(err.Error()) // "validation failed: something went wrong"
+
+// Set error metadata
+metadata := json.RawMessage(`{"user_id": 123, "request_id": "abc-123"}`)
+err.SetMetadata(&metadata)
+
+// Get error metadata
+meta := err.Metadata()
+
+// Unmarshal metadata into a struct
+type ErrorContext struct {
+    UserID    int    `json:"user_id"`
+    RequestID string `json:"request_id"`
+}
+var ctx ErrorContext
+err.UnmarshalMetadata(&ctx)
 ```
 
 ### JSON Output Example
@@ -78,7 +93,11 @@ fmt.Println(err.Error()) // "validation failed: something went wrong"
       "package": "package/path"
     }
   ],
-  "prefix": "validation failed"
+  "prefix": "validation failed",
+  "metadata": {
+    "user_id": 123,
+    "request_id": "abc-123"
+  }
 }
 ```
 

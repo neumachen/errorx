@@ -118,7 +118,8 @@ func (e errorData) jsonObject() errorJSONObject {
 	}
 }
 
-// MarshalJSON ...
+// MarshalJSON implements the json.Marshaler interface to provide custom JSON serialization
+// for errorData, including cause, stack frames, stack, and prefix information.
 func (e errorData) MarshalJSON() ([]byte, error) {
 	return json.Marshal(e.jsonObject())
 }
@@ -141,10 +142,14 @@ func (e errorData) Stack() []uintptr {
 	return e.stack
 }
 
+// Metadata returns the error's associated metadata as a JSON raw message.
+// Returns nil if no metadata has been set.
 func (e errorData) Metadata() *json.RawMessage {
 	return e.metadata
 }
 
+// UnmarshalMetadata attempts to unmarshal the error's metadata into the provided unmarshaler.
+// If no metadata is set, returns nil. Otherwise, delegates to the unmarshaler's UnmarshalJSON method.
 func (e errorData) UnmarshalMetadata(unmarshalerFunc json.Unmarshaler) error {
 	if e.metadata == nil {
 		return nil

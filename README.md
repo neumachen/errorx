@@ -1,5 +1,8 @@
 # errorx
 
+[![test](https://github.com/neumachen/errorx/actions/workflows/test.yml/badge.svg)](https://github.com/neumachen/errorx/actions/workflows/test.yml)
+[![lint](https://github.com/neumachen/errorx/actions/workflows/lint.yml/badge.svg)](https://github.com/neumachen/errorx/actions/workflows/lint.yml)
+
 A small, standard-library-only Go error package that extends `errors` with
 stack-trace capture, contextual prefix wrapping, structured JSON / `log/slog`
 output, optional caller-supplied metadata, and panic-recovery helpers. It

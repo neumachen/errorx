@@ -1,10 +1,11 @@
-package errorx
+package errorx_test
 
 import (
 	"reflect"
+	"runtime/debug"
 	"testing"
 
-	"github.com/stretchr/testify/require"
+	"github.com/neumachen/errorx"
 )
 
 var createdBy = `panic: hello!
@@ -22,20 +23,6 @@ created by github.com/neumachen/testgo/webkit/g/app/controllers.App.Index
 goroutine 16 [IO wait]:
 net.runtime_pollWait(0x911c30, 0x72, 0x0)
 	/0/c/go/src/pkg/runtime/netpoll.goc:146 +0x66
-net.(*pollDesc).Wait(0xc2080ba990, 0x72, 0x0, 0x0)
-	/0/c/go/src/pkg/net/fd_poll_runtime.go:84 +0x46
-net.(*pollDesc).WaitRead(0xc2080ba990, 0x0, 0x0)
-	/0/c/go/src/pkg/net/fd_poll_runtime.go:89 +0x42
-net.(*netFD).accept(0xc2080ba930, 0x58be30, 0x0, 0x9103f0, 0x23)
-	/0/c/go/src/pkg/net/fd_unix.go:409 +0x343
-net.(*TCPListener).AcceptTCP(0xc20803e168, 0x8, 0x0, 0x0)
-	/0/c/go/src/pkg/net/tcpsock_posix.go:234 +0x5d
-net.(*TCPListener).Accept(0xc20803e168, 0x0, 0x0, 0x0, 0x0)
-	/0/c/go/src/pkg/net/tcpsock_posix.go:244 +0x4b
-github.com/revel/revel.Run(0xe6d9)
-	/0/go/src/github.com/revel/revel/server.go:113 +0x926
-main.main()
-	/0/go/src/github.com/neumachen/testgo/webkit/g/app/tmp/main.go:109 +0xe1a
 `
 
 var normalSplit = `panic: hello!
@@ -51,20 +38,6 @@ net/http.(*Server).Serve(0xc20806c780, 0x910c88, 0xc20803e168, 0x0, 0x0)
 goroutine 16 [IO wait]:
 net.runtime_pollWait(0x911c30, 0x72, 0x0)
 	/0/c/go/src/pkg/runtime/netpoll.goc:146 +0x66
-net.(*pollDesc).Wait(0xc2080ba990, 0x72, 0x0, 0x0)
-	/0/c/go/src/pkg/net/fd_poll_runtime.go:84 +0x46
-net.(*pollDesc).WaitRead(0xc2080ba990, 0x0, 0x0)
-	/0/c/go/src/pkg/net/fd_poll_runtime.go:89 +0x42
-net.(*netFD).accept(0xc2080ba930, 0x58be30, 0x0, 0x9103f0, 0x23)
-	/0/c/go/src/pkg/net/fd_unix.go:409 +0x343
-net.(*TCPListener).AcceptTCP(0xc20803e168, 0x8, 0x0, 0x0)
-	/0/c/go/src/pkg/net/tcpsock_posix.go:234 +0x5d
-net.(*TCPListener).Accept(0xc20803e168, 0x0, 0x0, 0x0, 0x0)
-	/0/c/go/src/pkg/net/tcpsock_posix.go:244 +0x4b
-github.com/revel/revel.Run(0xe6d9)
-	/0/go/src/github.com/revel/revel/server.go:113 +0x926
-main.main()
-	/0/go/src/github.com/neumachen/testgo/webkit/g/app/tmp/main.go:109 +0xe1a
 `
 
 var lastGoroutine = `panic: hello!
@@ -72,20 +45,6 @@ var lastGoroutine = `panic: hello!
 goroutine 16 [IO wait]:
 net.runtime_pollWait(0x911c30, 0x72, 0x0)
 	/0/c/go/src/pkg/runtime/netpoll.goc:146 +0x66
-net.(*pollDesc).Wait(0xc2080ba990, 0x72, 0x0, 0x0)
-	/0/c/go/src/pkg/net/fd_poll_runtime.go:84 +0x46
-net.(*pollDesc).WaitRead(0xc2080ba990, 0x0, 0x0)
-	/0/c/go/src/pkg/net/fd_poll_runtime.go:89 +0x42
-net.(*netFD).accept(0xc2080ba930, 0x58be30, 0x0, 0x9103f0, 0x23)
-	/0/c/go/src/pkg/net/fd_unix.go:409 +0x343
-net.(*TCPListener).AcceptTCP(0xc20803e168, 0x8, 0x0, 0x0)
-	/0/c/go/src/pkg/net/tcpsock_posix.go:234 +0x5d
-net.(*TCPListener).Accept(0xc20803e168, 0x0, 0x0, 0x0, 0x0)
-	/0/c/go/src/pkg/net/tcpsock_posix.go:244 +0x4b
-github.com/revel/revel.Run(0xe6d9)
-	/0/go/src/github.com/revel/revel/server.go:113 +0x926
-main.main()
-	/0/go/src/github.com/neumachen/testgo/webkit/g/app/tmp/main.go:109 +0xe1a
 
 goroutine 54 [running]:
 runtime.panic(0x35ce40, 0xc208039db0)
@@ -96,7 +55,7 @@ net/http.(*Server).Serve(0xc20806c780, 0x910c88, 0xc20803e168, 0x0, 0x0)
 	/0/c/go/src/pkg/net/http/server.go:1698 +0x91
 `
 
-var result = []StackFrame{
+var baseFrames = []errorx.StackFrame{
 	{
 		File:       "/0/c/go/src/pkg/runtime/panic.c",
 		LineNumber: 279,
@@ -117,48 +76,122 @@ var result = []StackFrame{
 	},
 }
 
-var resultCreatedBy = append(result,
-	StackFrame{
-		File:           "/0/go/src/github.com/neumachen/testgo/webkit/g/app/controllers/app.go",
-		LineNumber:     14,
-		Name:           "App.Index",
-		Package:        "github.com/neumachen/testgo/webkit/g/app/controllers",
-		ProgramCounter: 0x0,
+var createdByExpected = append(append([]errorx.StackFrame{}, baseFrames...),
+	errorx.StackFrame{
+		File:       "/0/go/src/github.com/neumachen/testgo/webkit/g/app/controllers/app.go",
+		LineNumber: 14,
+		Name:       "App.Index",
+		Package:    "github.com/neumachen/testgo/webkit/g/app/controllers",
 	})
 
 func TestParsePanic(t *testing.T) {
-	todo := map[string]string{
-		"createdBy":     createdBy,
-		"normalSplit":   normalSplit,
-		"lastGoroutine": lastGoroutine,
+	cases := []struct {
+		name  string
+		input string
+		want  []errorx.StackFrame
+	}{
+		{name: "createdBy", input: createdBy, want: createdByExpected},
+		{name: "normalSplit", input: normalSplit, want: baseFrames},
+		{name: "lastGoroutine", input: lastGoroutine, want: baseFrames},
 	}
 
-	for key, val := range todo {
-		errx, err := ParsePanic(val)
-		if err != nil {
-			t.Fatal(err)
-		}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			errx, err := errorx.ParsePanic(tc.input)
+			if err != nil {
+				t.Fatalf("ParsePanic(%s): %v", tc.name, err)
+			}
+			if got := errx.Type(); got != "panic" {
+				t.Errorf("Type = %q, want %q", got, "panic")
+			}
+			if got := errx.Error(); got != "hello!" {
+				t.Errorf("Error = %q, want %q", got, "hello!")
+			}
+			frames := errx.StackFrames()
+			if len(frames) > 0 && frames[0].Func() != nil {
+				t.Errorf("frames[0].Func() should be nil for parsed panic frames")
+			}
+			if !reflect.DeepEqual(frames, tc.want) {
+				t.Errorf("frames mismatch: got=%#v want=%#v", frames, tc.want)
+			}
+		})
+	}
+}
 
-		if errx.Type() != "panic" {
-			t.Errorf("Wrong type: %s", errx.Type())
-		}
-
-		if errx.Error() != "hello!" {
-			t.Errorf("Wrong message: %s", errx.Type())
-		}
-
-		if errx.StackFrames()[0].Func() != nil {
-			t.Errorf("Somehow managed to find a func...")
-		}
-
-		result := result
-		if key == "createdBy" {
-			result = resultCreatedBy
-		}
-
-		require.Equal(t, errx.StackFrames(), result)
-		if !reflect.DeepEqual(errx.StackFrames(), result) {
-			t.Errorf("Wrong stack for %s: %#v", key, errx.StackFrames())
+func TestParsePanicEmptyAndGarbage(t *testing.T) {
+	cases := []string{
+		"",
+		"not a panic\n",
+		"panic: only one line",
+		"panic: x\n\ngoroutine 1 [running]:\nonly one half",
+	}
+	for _, in := range cases {
+		_, err := errorx.ParsePanic(in)
+		if err == nil {
+			t.Errorf("ParsePanic(%q) returned nil error; want error", in)
 		}
 	}
+}
+
+func TestFromPanicRecover(t *testing.T) {
+	var err *errorx.TraceError
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				err = errorx.FromPanic(r, debug.Stack())
+			}
+		}()
+		panic("boom")
+	}()
+
+	if err == nil {
+		t.Fatal("FromPanic returned nil error after recover")
+	}
+	if err.Type() != "panic" {
+		t.Errorf("Type = %q, want %q", err.Type(), "panic")
+	}
+	if err.Error() != "boom" {
+		t.Errorf("Error = %q, want %q", err.Error(), "boom")
+	}
+	if rs := err.RuntimeStack(); len(rs) == 0 {
+		t.Errorf("RuntimeStack is empty for FromPanic with debug.Stack()")
+	}
+}
+
+func TestFromPanicNoStackArgumentCapturesFromCaller(t *testing.T) {
+	err := errorx.FromPanic("oops", nil)
+	if err == nil {
+		t.Fatal("FromPanic returned nil")
+	}
+	if err.Error() != "oops" {
+		t.Errorf("Error = %q, want %q", err.Error(), "oops")
+	}
+	frames := err.StackFrames()
+	if len(frames) == 0 {
+		t.Fatal("expected at least one stack frame when debug stack not supplied")
+	}
+}
+
+// FuzzParsePanic ensures the parser is robust against arbitrary input. It
+// must never panic and may either succeed or return an error.
+func FuzzParsePanic(f *testing.F) {
+	f.Add(createdBy)
+	f.Add(normalSplit)
+	f.Add(lastGoroutine)
+	f.Add("")
+	f.Add("panic: x\n")
+	f.Add("panic: x\n\ngoroutine 1 [running]:\nfoo()\n\tfile.go:1 +0x1\n")
+	f.Add(string(debug.Stack()))
+
+	f.Fuzz(func(t *testing.T, s string) {
+		got, err := errorx.ParsePanic(s)
+		if err != nil && got != nil {
+			t.Fatalf("ParsePanic returned (non-nil, non-nil) for %q", s)
+		}
+		if got != nil {
+			_ = got.Error()
+			_ = got.Type()
+			_ = got.StackFrames()
+		}
+	})
 }

@@ -1,334 +1,507 @@
-// Package errorx provides a comprehensive error handling solution with stack traces and error wrapping.
-//
-// The package extends Go's standard error interface with additional capabilities like stack traces,
-// error wrapping, and detailed error information. It maintains compatibility with the standard
-// error interface while providing richer error context and debugging capabilities.
-//
-// Key features:
-//   - Stack trace capture and formatting
-//   - Error wrapping with cause tracking
-//   - Prefix support for error context
-//   - JSON serialization
-//   - Runtime stack information
-//   - Source line lookup
 package errorx
 
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"reflect"
 	"runtime"
+	"sync"
 )
 
-// MaxStackDepth is the maximum number of stackframes on any error.
-var MaxStackDepth = 50
+// DefaultMaxStackDepth is the default cap on captured program counters per
+// error. Negative or zero values are clamped to this default at capture time.
+const DefaultMaxStackDepth = 50
 
-// ErrorSetter defines methods for modifying error properties after creation.
-// This interface allows for progressive enhancement of errors with additional
-// context and metadata.
-type ErrorSetter interface {
-	// setPrefix sets or updates the error's context prefix.
-	// This is an internal method used by WrapPrefix to add context to errors.
-	setPrefix(prefixToSet string)
-
-	// SetMetadata sets the error's metadata as a JSON raw message.
-	// The metadata is stored as json.RawMessage to properly handle nested JSON structures
-	// without escaping issues. Returns an error if the operation fails.
-	SetMetadata(metadataToSet *json.RawMessage) error
-}
-
-// Error is the interface that extends Go's standard error interface with additional
-// capabilities for error handling, stack traces, and error wrapping.
+// MaxStackDepth caps the number of program counters captured per error.
 //
-// The interface provides methods to:
-// - Access the underlying cause of the error
-// - Retrieve stack trace information
-// - Get error context through prefixes
-// - Determine error types
-// - Access formatted stack traces
+// Deprecated: this is a process-wide mutable global with no synchronization.
+// New code should rely on the default. The variable is retained only for
+// source compatibility; invalid values (<= 0) are clamped to
+// DefaultMaxStackDepth at capture time.
+var MaxStackDepth = DefaultMaxStackDepth
+
+// Error is the historical exported interface of this package.
+//
+// Deprecated: new code should accept the standard error interface and use
+// type assertions to *TraceError for enriched access. This interface is
+// retained for source compatibility.
 type Error interface {
-	ErrorSetter
-	// Cause returns the underlying error that caused this error.
-	// If this error was created directly and not through wrapping,
-	// Cause returns the error itself.
+	error
 	Cause() error
-
-	// Error returns the error message. If the error has a prefix,
-	// it will be included in the message in the format "prefix: message".
-	Error() string
-
-	// StackFrames returns the call stack as an array of StackFrame objects,
-	// providing detailed information about each call site.
 	StackFrames() []StackFrame
-
-	// Stack returns the raw program counters of the call stack.
-	// This is useful for low-level stack trace analysis.
 	Stack() []uintptr
-
-	// Prefix returns any prefix string that was added to this error
-	// through WrapPrefix. Returns empty string if no prefix was set.
 	Prefix() string
-
-	// Type returns the underlying error type as a string.
-	// For panic errors, it returns "panic".
 	Type() string
-
-	// RuntimeStack returns a formatted byte slice containing the
-	// full stack trace in the same format as runtime.Stack().
 	RuntimeStack() []byte
-
-	// Metadata returns the error's associated metadata as a JSON raw message.
-	// Returns nil if no metadata has been set.
-	//
-	// json.RawMessage is used instead of []byte to ensure proper JSON handling:
-	// 1. It preserves the exact JSON encoding of the metadata
-	// 2. Prevents double-escaping of nested JSON objects
-	// 3. Maintains the original structure when marshaling/unmarshaling
-	// 4. Allows for delayed parsing of the JSON content
 	Metadata() *json.RawMessage
-
-	// UnmarshalMetadata attempts to unmarshal the error's metadata into the provided target.
-	// If no metadata is set, returns nil. Otherwise, uses json.Unmarshal to populate the target.
-	// Returns an error if unmarshaling fails.
+	SetMetadata(*json.RawMessage) error
 	UnmarshalMetadata(target any) error
 }
 
-type errorJSONObject struct {
-	Cause       string           `json:"cause,omitempty"`
-	StackFrames []StackFrame     `json:"stack_frames,omitempty"`
-	Stack       []uintptr        `json:"stack,omitempty"`
-	Prefix      string           `json:"prefix,omitempty"`
-	Metadata    *json.RawMessage `json:"metadata,omitempty"`
+// ErrorSetter is the historical mutation interface.
+//
+// Deprecated: prefer calling SetMetadata directly on *TraceError. This
+// interface is retained for source compatibility and is reduced to metadata
+// mutation only; the prefix is no longer mutable after construction.
+type ErrorSetter interface {
+	SetMetadata(*json.RawMessage) error
 }
 
-// errorData is the concrete implementation of the Error interface, providing
-// enhanced error handling capabilities with stack traces and error wrapping.
-//
-// It implements the Error interface while maintaining compatibility with Go's
-// built-in error interface, inspired by PostgreSQL's error handling style guide.
-//
-// The type stores:
-// - The underlying cause error
-// - Stack trace information as frames
-// - Optional prefix for context
-// - Raw stack pointers for debugging
-type errorData struct {
-	cause       error
-	stackFrames []StackFrame
-	prefix      string
-	stack       []uintptr
-	metadata    *json.RawMessage
+// Record is the stable structured representation of a TraceError used by
+// MarshalJSON and LogValue. Field names are part of the package's public
+// surface; new fields may be added but existing ones will not silently change
+// meaning.
+type Record struct {
+	// Message is the full contextual error message, identical to Error().
+	Message string `json:"message,omitempty"`
+	// Cause is the deepest non-TraceError cause message.
+	Cause string `json:"cause,omitempty"`
+	// Type is a diagnostic Go type string (e.g. "*errors.errorString",
+	// "panic"). It is not stable enough for domain control flow.
+	Type string `json:"type,omitempty"`
+	// Prefix is this wrapper's own prefix; it does not include prefixes
+	// contributed by wrapped TraceErrors.
+	Prefix string `json:"prefix,omitempty"`
+	// StackFrames contains resolved frame data with no source-code lines.
+	StackFrames []StackFrame `json:"stack_frames,omitempty"`
+	// Stack contains the raw captured program counters.
+	Stack []uintptr `json:"stack,omitempty"`
+	// Metadata is caller-supplied raw JSON.
+	Metadata *json.RawMessage `json:"metadata,omitempty"`
 }
 
-// jsonObject creates a JSON-serializable representation of the error data,
-// including the cause, stack frames, raw stack, prefix information, and metadata.
-func (e errorData) jsonObject() errorJSONObject {
-	return errorJSONObject{
-		Cause:       e.Error(),
-		StackFrames: e.StackFrames(),
-		Stack:       e.Stack(),
-		Prefix:      e.Prefix(),
-		Metadata:    e.metadata,
+// TraceError is an enriched error value with a captured stack trace, an
+// optional contextual prefix, optional structured metadata, and standard
+// errors.Unwrap support.
+//
+// A *TraceError is immutable apart from its metadata slot. All methods are
+// safe for concurrent use; reads of mutable state take a read lock, and
+// SetMetadata takes a write lock. Wrapping an existing *TraceError produces a
+// new *TraceError without mutating the wrapped value.
+//
+// The zero value is not usable; obtain a *TraceError via NewError, Wrap,
+// WrapPrefix, NewErrorf, Errorf, ParsePanic, or FromPanic.
+type TraceError struct {
+	cause  error
+	prefix string
+
+	// stack holds program counters captured at construction. The slice is
+	// never mutated after the struct is returned to the caller.
+	stack []uintptr
+
+	framesOnce sync.Once
+	frames     []StackFrame
+
+	mu       sync.RWMutex
+	metadata *json.RawMessage
+
+	// debugStack is the raw runtime.Stack() / debug.Stack() bytes for
+	// errors built from a pre-formatted panic stack. It is non-nil only
+	// when stack capture was not available (i.e. ParsePanic, FromPanic
+	// without runtime.Callers).
+	debugStack []byte
+	// parsedFrames is the pre-parsed frame list used by ParsePanic; it
+	// substitutes for the lazy resolution path when set.
+	parsedFrames []StackFrame
+}
+
+// captureStack records up to MaxStackDepth program counters, skipping the
+// given number of frames. The returned slice is owned by the caller.
+func captureStack(skip int) []uintptr {
+	depth := MaxStackDepth
+	if depth <= 0 {
+		depth = DefaultMaxStackDepth
+	}
+	pcs := make([]uintptr, depth)
+	n := runtime.Callers(skip+1, pcs)
+	out := make([]uintptr, n)
+	copy(out, pcs[:n])
+	return out
+}
+
+// newTraceError builds a *TraceError around the given cause with a fresh
+// stack capture. The caller is responsible for nil-checking cause.
+func newTraceError(cause error, skip int) *TraceError {
+	return &TraceError{
+		cause: cause,
+		stack: captureStack(skip + 1),
 	}
 }
 
-// MarshalJSON implements the json.Marshaler interface to provide custom JSON serialization
-// for errorData, including cause, stack frames, stack, and prefix information.
-func (e errorData) MarshalJSON() ([]byte, error) {
-	return json.Marshal(e.jsonObject())
+// NewError returns a *TraceError wrapping cause. It returns nil if cause is
+// nil, following the Go convention that nil means no error.
+func NewError(cause error) Error {
+	if cause == nil {
+		return nil
+	}
+	return newTraceError(cause, 1)
 }
 
-// Cause returns the underlying error that caused this error.
-// If this error was created directly, returns itself.
-func (e *errorData) Cause() error {
+// NewErrorf creates a *TraceError from a formatted message. The message is
+// produced via fmt.Errorf, so %w directives in format participate in
+// errors.Is / errors.As walks through the wrapper.
+//
+// Deprecated: prefer Errorf. NewErrorf is retained for source compatibility.
+func NewErrorf(format string, a ...any) Error {
+	return newTraceError(fmt.Errorf(format, a...), 1)
+}
+
+// Errorf creates a *TraceError from a formatted message. It is the canonical
+// alias for the historical NewErrorf and is the form the README recommends.
+// %w directives participate in errors.Is / errors.As.
+func Errorf(format string, a ...any) Error {
+	return newTraceError(fmt.Errorf(format, a...), 1)
+}
+
+// Wrap returns a *TraceError around err with a fresh stack capture at the
+// call site. It returns nil if err is nil. Unlike historical behavior, Wrap
+// never returns the input pointer aliased; wrapping an existing *TraceError
+// produces a new wrapper that Unwraps to it.
+//
+// stackToSkip is added to the number of frames hidden from the captured
+// stack; 0 starts the stack at the caller of Wrap.
+func Wrap(err error, stackToSkip int) Error {
+	if err == nil {
+		return nil
+	}
+	return newTraceError(err, stackToSkip+1)
+}
+
+// WrapPrefix returns a new *TraceError that wraps err and prepends prefix to
+// the contextual error message. The wrapped error is not mutated. Calling
+// Error() on the result walks the wrapper chain, so wrapping a prefixed
+// TraceError yields "outer: inner: base".
+//
+// WrapPrefix returns nil if err is nil.
+func WrapPrefix(err error, prefix string, skip int) Error {
+	if err == nil {
+		return nil
+	}
+	te := newTraceError(err, skip+1)
+	te.prefix = prefix
+	return te
+}
+
+// Is reports whether any error in err's chain matches target. It is a thin
+// wrapper around the standard library's errors.Is.
+//
+// Deprecated: call errors.Is directly. This function is retained for source
+// compatibility.
+func Is(err, target error) bool {
+	return errors.Is(err, target)
+}
+
+// FromPanic constructs a *TraceError from a value recovered via recover().
+//
+// The cause is fmt.Sprint(value) reported with Type "panic". If stack is
+// non-nil it is preserved as the error's runtime stack output; otherwise a
+// fresh runtime.Callers capture is taken at the call site. The expected
+// usage is:
+//
+//	defer func() {
+//	    if r := recover(); r != nil {
+//	        err = errorx.FromPanic(r, debug.Stack())
+//	    }
+//	}()
+func FromPanic(value any, stack []byte) *TraceError {
+	te := &TraceError{
+		cause:      uncaughtPanic{message: fmt.Sprint(value)},
+		debugStack: append([]byte(nil), stack...),
+	}
+	if len(stack) == 0 {
+		te.debugStack = nil
+		te.stack = captureStack(1)
+	}
+	return te
+}
+
+// Error returns the contextual error message. When the error has a prefix,
+// the prefix is prepended with a colon separator. Wrapped errors contribute
+// their own prefixes via the Unwrap chain.
+func (e *TraceError) Error() string {
+	if e == nil {
+		return ""
+	}
+	if e.cause == nil {
+		if e.prefix != "" {
+			return e.prefix
+		}
+		return ""
+	}
+	if e.prefix == "" {
+		return e.cause.Error()
+	}
+	return e.prefix + ": " + e.cause.Error()
+}
+
+// Unwrap returns the immediate wrapped cause for use with errors.Is and
+// errors.As.
+func (e *TraceError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
 	return e.cause
 }
 
-// Prefix returns the error context prefix if one was set through WrapPrefix.
-// Returns an empty string if no prefix was set.
-func (e errorData) Prefix() string {
+// Cause returns the deepest non-TraceError cause in the wrapper chain. It is
+// retained for source compatibility with callers that want the "original"
+// error; new code should use errors.Is / errors.As / errors.Unwrap.
+func (e *TraceError) Cause() error {
+	if e == nil {
+		return nil
+	}
+	var cur error = e.cause
+	for {
+		next, ok := cur.(*TraceError)
+		if !ok || next == nil {
+			return cur
+		}
+		cur = next.cause
+	}
+}
+
+// Prefix returns this wrapper's own prefix string. It does not include
+// prefixes contributed by wrapped TraceErrors.
+func (e *TraceError) Prefix() string {
+	if e == nil {
+		return ""
+	}
 	return e.prefix
 }
 
-// Stack returns the raw program counter values for the error's stack trace.
-// This provides low-level access to the call stack for debugging purposes.
-func (e errorData) Stack() []uintptr {
-	return e.stack
-}
-
-// Metadata returns the error's associated metadata as a JSON raw message.
-// Returns nil if no metadata has been set.
-func (e errorData) Metadata() *json.RawMessage {
-	return e.metadata
-}
-
-// UnmarshalMetadata attempts to unmarshal the error's metadata into the provided unmarshaler.
-// If no metadata is set, returns nil. Otherwise, delegates to the unmarshaler's UnmarshalJSON method.
-func (e errorData) UnmarshalMetadata(target any) error {
-	if e.metadata == nil {
-		return nil
-	}
-
-	return json.Unmarshal(*e.metadata, target)
-}
-
-// SetMetadata sets the provided JSON raw message as the error's metadata.
-// Uses json.RawMessage to properly handle nested JSON structures without escaping issues
-// that can occur with regular []byte when the metadata contains nested JSON objects.
-func (e *errorData) SetMetadata(metadata *json.RawMessage) error {
-	e.metadata = metadata
-	return nil
-}
-
-// Error returns the underlying error's message.
-func (e errorData) Error() string {
-	if e.cause == nil {
-		return ""
-	}
-
-	msg := e.cause.Error()
-	if e.Prefix() != "" {
-		msg = fmt.Sprintf("%s: %s", e.Prefix(), msg)
-	}
-
-	return msg
-}
-
-// setPrefix sets or updates the error's context prefix.
-// This is an internal method used by WrapPrefix to add context to errors.
-func (e *errorData) setPrefix(prefixToSet string) {
-	e.prefix = prefixToSet
-}
-
-// Stack returns the callstack formatted the same way that go does
-// in runtime/debug.Stack()
-// RuntimeStack returns a formatted byte slice of the stack trace,
-// matching the format of runtime.Stack(). This provides a familiar
-// stack trace format for logging and debugging.
-func (e errorData) RuntimeStack() []byte {
-	var buf bytes.Buffer
-	defer buf.Reset()
-	for _, frame := range e.StackFrames() {
-		buf.WriteString(frame.String())
-	}
-
-	return buf.Bytes()
-}
-
-// StackFrames returns an array of frames containing information about the
-// stack.
-func (e errorData) StackFrames() []StackFrame {
-	if e.stackFrames == nil {
-		e.stackFrames = make([]StackFrame, len(e.stack))
-
-		for i, pc := range e.stack {
-			e.stackFrames[i] = NewStackFrame(pc)
-		}
-	}
-
-	return e.stackFrames
-}
-
-// ErrorRuntimeStack returns a string that contains both the
-// error message and the callstack.
-// ErrorRuntimeStack returns a formatted string containing both the error
-// message and its stack trace, useful for comprehensive error logging.
-func (e errorData) ErrorRuntimeStack() string {
-	return e.Type() + " " + e.Error() + "\n" + string(e.RuntimeStack())
-}
-
-// Type returns the type this error. e.g. *errors.stringError.
-func (e errorData) Type() string {
-	if e.cause == nil {
+// Type returns a Go type string describing the underlying cause. For errors
+// produced by ParsePanic or FromPanic it returns "panic". The empty string is
+// returned when no cause is present. The result is diagnostic only and is
+// not stable enough for domain control flow.
+func (e *TraceError) Type() string {
+	if e == nil || e.cause == nil {
 		return ""
 	}
 	if _, ok := e.cause.(uncaughtPanic); ok {
-		return fmt.Sprintf("panic")
+		return "panic"
 	}
 	return reflect.TypeOf(e.cause).String()
 }
 
-
-// NewError creates an Error from the given error value.
-// The stacktrace will point to the line of code that called NewError.
-func NewError(cause error) Error {
-	if cause == nil {
-		cause = fmt.Errorf("")
+// Stack returns a copy of the captured program counters. Callers may
+// freely mutate the returned slice.
+func (e *TraceError) Stack() []uintptr {
+	if e == nil {
+		return nil
 	}
+	out := make([]uintptr, len(e.stack))
+	copy(out, e.stack)
+	return out
+}
 
-	stack := make([]uintptr, MaxStackDepth)
-	length := runtime.Callers(2, stack[:])
-	return &errorData{
-		cause: cause,
-		stack: stack[:length],
+// StackFrames returns a copy of the resolved stack frame data. Frames are
+// resolved lazily on first call. Subsequent calls reuse the cached frames
+// and return a fresh copy each time.
+func (e *TraceError) StackFrames() []StackFrame {
+	if e == nil {
+		return nil
+	}
+	e.framesOnce.Do(func() {
+		switch {
+		case e.parsedFrames != nil:
+			e.frames = e.parsedFrames
+		case len(e.stack) > 0:
+			frames := make([]StackFrame, 0, len(e.stack))
+			it := runtime.CallersFrames(e.stack)
+			i := 0
+			for {
+				rf, more := it.Next()
+				pc := uintptr(0)
+				if i < len(e.stack) {
+					pc = e.stack[i]
+				}
+				pkg, name := splitPackageAndName(rf.Function)
+				frames = append(frames, StackFrame{
+					File:           rf.File,
+					LineNumber:     rf.Line,
+					Name:           name,
+					Package:        pkg,
+					ProgramCounter: pc,
+				})
+				i++
+				if !more {
+					break
+				}
+			}
+			e.frames = frames
+		}
+	})
+	out := make([]StackFrame, len(e.frames))
+	copy(out, e.frames)
+	return out
+}
+
+// RuntimeStack returns a formatted byte slice describing the captured stack.
+// The format is the package's own representation; it does not read source
+// files from disk and is not guaranteed to match runtime/debug.Stack().
+//
+// For TraceErrors built from a pre-formatted panic stack (FromPanic with a
+// non-nil stack argument), RuntimeStack returns those raw bytes.
+func (e *TraceError) RuntimeStack() []byte {
+	if e == nil {
+		return nil
+	}
+	if len(e.debugStack) > 0 {
+		out := make([]byte, len(e.debugStack))
+		copy(out, e.debugStack)
+		return out
+	}
+	frames := e.StackFrames()
+	var buf bytes.Buffer
+	for _, f := range frames {
+		buf.WriteString(f.String())
+	}
+	return buf.Bytes()
+}
+
+// Metadata returns a deep copy of the caller-supplied metadata, or nil if
+// none was set.
+func (e *TraceError) Metadata() *json.RawMessage {
+	if e == nil {
+		return nil
+	}
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	if e.metadata == nil {
+		return nil
+	}
+	clone := make(json.RawMessage, len(*e.metadata))
+	copy(clone, *e.metadata)
+	return &clone
+}
+
+// SetMetadata stores metadata on the error. Passing nil clears any previously
+// stored metadata. Non-nil metadata is validated with json.Valid and cloned;
+// invalid JSON is reported immediately and the previous value is left
+// unchanged. SetMetadata is safe for concurrent use.
+func (e *TraceError) SetMetadata(metadata *json.RawMessage) error {
+	if e == nil {
+		return errors.New("errorx: SetMetadata on nil *TraceError")
+	}
+	if metadata == nil {
+		e.mu.Lock()
+		e.metadata = nil
+		e.mu.Unlock()
+		return nil
+	}
+	if !json.Valid(*metadata) {
+		return errors.New("errorx: invalid metadata: not valid JSON")
+	}
+	clone := make(json.RawMessage, len(*metadata))
+	copy(clone, *metadata)
+	e.mu.Lock()
+	e.metadata = &clone
+	e.mu.Unlock()
+	return nil
+}
+
+// UnmarshalMetadata decodes the stored metadata into target. It returns nil
+// without touching target when no metadata is present.
+func (e *TraceError) UnmarshalMetadata(target any) error {
+	if e == nil {
+		return nil
+	}
+	e.mu.RLock()
+	md := e.metadata
+	e.mu.RUnlock()
+	if md == nil {
+		return nil
+	}
+	return json.Unmarshal(*md, target)
+}
+
+// Record returns a snapshot of the error suitable for structured output.
+// The returned StackFrames and Stack slices are copies owned by the caller.
+func (e *TraceError) Record() Record {
+	if e == nil {
+		return Record{}
+	}
+	var causeMsg string
+	if c := e.Cause(); c != nil {
+		causeMsg = c.Error()
+	}
+	return Record{
+		Message:     e.Error(),
+		Cause:       causeMsg,
+		Type:        e.Type(),
+		Prefix:      e.Prefix(),
+		StackFrames: e.StackFrames(),
+		Stack:       e.Stack(),
+		Metadata:    e.Metadata(),
 	}
 }
 
-// Wrap makes an Error from the given value. If that value is already an
-// error then it will be used directly, if not, it will be passed to
-// fmt.Errorf("%v"). The stackToSkip parameter indicates how far up the stack
-// to start the stacktrace. 0 is from the current call, 1 from its caller, etc.
-func Wrap(errToWrap error, stackToSkip int) Error {
-	var cause error
+// MarshalJSON encodes the error as a Record.
+func (e *TraceError) MarshalJSON() ([]byte, error) {
+	if e == nil {
+		return []byte("null"), nil
+	}
+	return json.Marshal(e.Record())
+}
 
-	switch e := errToWrap.(type) {
-	case *errorData:
-		return e
-	case error:
-		cause = e
+// LogValue returns a slog.Value with the structured fields from Record. The
+// raw stack PCs are omitted from the slog output to keep log lines compact;
+// they remain available via JSON marshaling and the Stack method.
+func (e *TraceError) LogValue() slog.Value {
+	if e == nil {
+		return slog.Value{}
+	}
+	r := e.Record()
+	attrs := make([]slog.Attr, 0, 6)
+	if r.Message != "" {
+		attrs = append(attrs, slog.String("message", r.Message))
+	}
+	if r.Cause != "" && r.Cause != r.Message {
+		attrs = append(attrs, slog.String("cause", r.Cause))
+	}
+	if r.Type != "" {
+		attrs = append(attrs, slog.String("type", r.Type))
+	}
+	if r.Prefix != "" {
+		attrs = append(attrs, slog.String("prefix", r.Prefix))
+	}
+	if len(r.StackFrames) > 0 {
+		attrs = append(attrs, slog.Any("stack_frames", r.StackFrames))
+	}
+	if r.Metadata != nil {
+		attrs = append(attrs, slog.Any("metadata", r.Metadata))
+	}
+	return slog.GroupValue(attrs...)
+}
+
+// Format implements fmt.Formatter.
+//
+//	%s, %v  → Error()
+//	%q      → quoted Error()
+//	%+v     → Error() followed by RuntimeStack()
+func (e *TraceError) Format(s fmt.State, verb rune) {
+	if e == nil {
+		_, _ = io.WriteString(s, "<nil>")
+		return
+	}
+	switch verb {
+	case 'v':
+		if s.Flag('+') {
+			_, _ = io.WriteString(s, e.Error())
+			_, _ = s.Write([]byte{'\n'})
+			_, _ = s.Write(e.RuntimeStack())
+			return
+		}
+		_, _ = io.WriteString(s, e.Error())
+	case 's':
+		_, _ = io.WriteString(s, e.Error())
+	case 'q':
+		fmt.Fprintf(s, "%q", e.Error())
 	default:
-		cause = fmt.Errorf("%v", e)
+		fmt.Fprintf(s, "%%!%c(errorx.TraceError=%s)", verb, e.Error())
 	}
-
-	stack := make([]uintptr, MaxStackDepth)
-	length := runtime.Callers(2+stackToSkip, stack[:])
-	return &errorData{
-		cause: cause,
-		stack: stack[:length],
-	}
-}
-
-// NewErrorf creates a new error with the given message. You can use it
-// as a drop-in replacement for fmt.NewErrorf() to provide descriptive
-// errors in return values.
-func NewErrorf(format string, a ...any) Error {
-	return Wrap(fmt.Errorf(format, a...), 2)
-}
-
-// WrapPrefix makes an Error from the given value. If that value is already an
-// error then it will be used directly, if not, it will be passed to
-// fmt.Errorf("%v"). The prefix parameter is used to add a prefix to the
-// error message when calling Error(). The skip parameter indicates how far
-// up the stack to start the stacktrace. 0 is from the current call,
-// 1 from its caller, etc.
-func WrapPrefix(cause error, prefixToWrap string, skip int) Error {
-	err := Wrap(cause, skip)
-
-	if err.Prefix() != "" {
-		err.setPrefix(fmt.Sprintf("%s: %s", prefixToWrap, err.Prefix()))
-	} else {
-		err.setPrefix(prefixToWrap)
-	}
-
-	return err
-}
-
-// Is detects whether the error is equal to a given error. Errors
-// are considered equal by this function if they are the same object,
-// or if they both contain the same error inside an errors.Error.
-func Is(comparedTo error, target error) bool {
-	if comparedTo == target {
-		return true
-	}
-
-	if errx, ok := comparedTo.(Error); ok {
-		return Is(errx.Cause(), target)
-	}
-
-	if original, ok := target.(*errorData); ok {
-		return Is(comparedTo, original.cause)
-	}
-
-	return false
 }

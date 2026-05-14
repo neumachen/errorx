@@ -1,19 +1,21 @@
 package errorx_test
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/neumachen/errorx"
-	"github.com/stretchr/testify/require"
 )
 
 func TestNewError(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    error
+		wantNil  bool
 		wantMsg  string
 		wantType string
 	}{
@@ -30,114 +32,170 @@ func TestNewError(t *testing.T) {
 			wantType: "*errors.errorString",
 		},
 		{
-			name:     "nil error",
-			input:    nil,
-			wantMsg:  "",
-			wantType: "*errors.errorString",
+			name:    "nil error returns nil",
+			input:   nil,
+			wantNil: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := errorx.NewError(tt.input)
-			require.NotNil(t, err)
-			require.Equal(t, tt.wantMsg, err.Error())
-			require.Equal(t, tt.wantType, err.Type())
-			require.NotEmpty(t, err.StackFrames())
+			if tt.wantNil {
+				if err != nil {
+					t.Fatalf("NewError(nil) = %v, want nil", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("NewError returned nil unexpectedly")
+			}
+			if got := err.Error(); got != tt.wantMsg {
+				t.Errorf("Error() = %q, want %q", got, tt.wantMsg)
+			}
+			if got := err.Type(); got != tt.wantType {
+				t.Errorf("Type() = %q, want %q", got, tt.wantType)
+			}
+			if len(err.StackFrames()) == 0 {
+				t.Errorf("StackFrames empty")
+			}
 		})
 	}
 }
 
-func TestErrorMetadata(t *testing.T) {
-	t.Run("SetMetadata with valid JSON", func(t *testing.T) {
-		err := errorx.NewError(fmt.Errorf("test error"))
-		metadata := json.RawMessage(`{"key": "value"}`)
+func TestNilHandling(t *testing.T) {
+	if got := errorx.NewError(nil); got != nil {
+		t.Errorf("NewError(nil) = %v, want nil", got)
+	}
+	if got := errorx.Wrap(nil, 0); got != nil {
+		t.Errorf("Wrap(nil, 0) = %v, want nil", got)
+	}
+	if got := errorx.WrapPrefix(nil, "p", 0); got != nil {
+		t.Errorf("WrapPrefix(nil, ...) = %v, want nil", got)
+	}
+}
 
-		setErr := err.SetMetadata(&metadata)
-		require.NoError(t, setErr)
+func TestErrorsIsAndAs(t *testing.T) {
+	sentinel := errors.New("sentinel")
 
-		require.Equal(t, &metadata, err.Metadata())
+	t.Run("Is through Wrap", func(t *testing.T) {
+		wrapped := errorx.Wrap(sentinel, 0)
+		if !errors.Is(wrapped, sentinel) {
+			t.Errorf("errors.Is(Wrap(sentinel), sentinel) = false")
+		}
+		if !errorx.Is(wrapped, sentinel) {
+			t.Errorf("errorx.Is(Wrap(sentinel), sentinel) = false")
+		}
 	})
 
-	t.Run("SetMetadata with nil", func(t *testing.T) {
-		err := errorx.NewError(fmt.Errorf("test error"))
-
-		setErr := err.SetMetadata(nil)
-		require.NoError(t, setErr)
-
-		require.Nil(t, err.Metadata())
+	t.Run("Is through WrapPrefix", func(t *testing.T) {
+		wrapped := errorx.WrapPrefix(sentinel, "ctx", 0)
+		if !errors.Is(wrapped, sentinel) {
+			t.Errorf("errors.Is(WrapPrefix(sentinel), sentinel) = false")
+		}
 	})
 
-	t.Run("SetMetadata can be updated", func(t *testing.T) {
-		err := errorx.NewError(fmt.Errorf("test error"))
-		metadata1 := json.RawMessage(`{"first": true}`)
-		metadata2 := json.RawMessage(`{"second": true}`)
+	t.Run("As through Wrap", func(t *testing.T) {
+		typed := &customErr{code: 42}
+		wrapped := errorx.Wrap(typed, 0)
+		var target *customErr
+		if !errors.As(wrapped, &target) {
+			t.Fatalf("errors.As did not find *customErr through Wrap")
+		}
+		if target.code != 42 {
+			t.Errorf("target.code = %d, want 42", target.code)
+		}
+	})
 
-		setErr := err.SetMetadata(&metadata1)
-		require.NoError(t, setErr)
-		require.Equal(t, &metadata1, err.Metadata())
+	t.Run("Is through nested wrappers", func(t *testing.T) {
+		inner := fmt.Errorf("layer1: %w", sentinel)
+		outer := errorx.Wrap(inner, 0)
+		if !errors.Is(outer, sentinel) {
+			t.Errorf("errors.Is did not traverse fmt.Errorf %%w through Wrap")
+		}
+	})
 
-		setErr = err.SetMetadata(&metadata2)
-		require.NoError(t, setErr)
-		require.Equal(t, &metadata2, err.Metadata())
+	t.Run("Is nil-nil", func(t *testing.T) {
+		if !errorx.Is(nil, nil) {
+			t.Errorf("Is(nil, nil) = false, want true")
+		}
 	})
 }
 
-func TestErrorMetadataUnmarshal(t *testing.T) {
-	t.Run("UnmarshalMetadata with valid data", func(t *testing.T) {
-		type TestMetadata struct {
-			Key   string `json:"key"`
-			Value int    `json:"value"`
-		}
-		err := errorx.NewError(fmt.Errorf("test error"))
-		metadata := json.RawMessage(`{"key": "test", "value": 123}`)
+type customErr struct{ code int }
 
-		setErr := err.SetMetadata(&metadata)
-		require.NoError(t, setErr)
+func (c *customErr) Error() string { return fmt.Sprintf("custom err: %d", c.code) }
 
-		var result TestMetadata
-		unmarshalErr := err.UnmarshalMetadata(&result)
-		require.NoError(t, unmarshalErr)
-		require.Equal(t, "test", result.Key)
-		require.Equal(t, 123, result.Value)
-	})
+func TestWrapDoesNotMutateExisting(t *testing.T) {
+	base := errors.New("base error")
+	inner := errorx.WrapPrefix(base, "inner", 0)
+	originalMsg := inner.Error()
+	originalPrefix := inner.Prefix()
+	originalStack := inner.Stack()
 
-	t.Run("UnmarshalMetadata with nil metadata", func(t *testing.T) {
-		type TestMetadata struct {
-			Key string `json:"key"`
-		}
-		err := errorx.NewError(fmt.Errorf("test error"))
+	outer := errorx.WrapPrefix(inner, "outer", 0)
 
-		var result TestMetadata
-		unmarshalErr := err.UnmarshalMetadata(&result)
-		require.NoError(t, unmarshalErr)
-		require.Empty(t, result.Key)
-	})
+	if inner.Error() != originalMsg {
+		t.Errorf("inner.Error() changed: got %q, want %q", inner.Error(), originalMsg)
+	}
+	if inner.Prefix() != originalPrefix {
+		t.Errorf("inner.Prefix() changed: got %q, want %q", inner.Prefix(), originalPrefix)
+	}
+	if want, got := "outer: inner: base error", outer.Error(); want != got {
+		t.Errorf("outer.Error() = %q, want %q", got, want)
+	}
+	if outer.Prefix() != "outer" {
+		t.Errorf("outer.Prefix() = %q, want %q", outer.Prefix(), "outer")
+	}
+	if len(outer.Stack()) == 0 {
+		t.Errorf("outer.Stack() empty; expected fresh capture")
+	}
+	if len(originalStack) == 0 {
+		t.Errorf("inner.Stack() unexpectedly empty")
+	}
 }
 
-func TestErrorJSON(t *testing.T) {
-	t.Run("Marshal/Unmarshal error", func(t *testing.T) {
-		// Create error with metadata
-		originalErr := errorx.NewError(fmt.Errorf("test error"))
-		metadata := json.RawMessage(`{"key": "value"}`)
-		err := originalErr.SetMetadata(&metadata)
-		require.NoError(t, err)
+func TestWrapPrefix(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		prefix   string
+		wantMsg  string
+		wantType string
+	}{
+		{
+			name:     "basic prefix",
+			err:      fmt.Errorf("base error"),
+			prefix:   "prefix",
+			wantMsg:  "prefix: base error",
+			wantType: "*errors.errorString",
+		},
+		{
+			name:     "multiple prefixes",
+			err:      errorx.WrapPrefix(fmt.Errorf("base error"), "prefix1", 0),
+			prefix:   "prefix2",
+			wantMsg:  "prefix2: prefix1: base error",
+			wantType: "*errorx.TraceError",
+		},
+	}
 
-		// Marshal to JSON
-		jsonBytes, err := json.Marshal(originalErr)
-		require.NoError(t, err)
-		require.NotEmpty(t, jsonBytes)
-
-		// Unmarshal and verify fields
-		var unmarshaled map[string]interface{}
-		err = json.Unmarshal(jsonBytes, &unmarshaled)
-		require.NoError(t, err)
-
-		require.Equal(t, "test error", unmarshaled["cause"])
-		require.NotEmpty(t, unmarshaled["stack_frames"])
-		require.NotEmpty(t, unmarshaled["stack"])
-		require.Contains(t, unmarshaled, "metadata")
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := errorx.WrapPrefix(tt.err, tt.prefix, 0)
+			if err == nil {
+				t.Fatal("WrapPrefix returned nil")
+			}
+			if got := err.Error(); got != tt.wantMsg {
+				t.Errorf("Error() = %q, want %q", got, tt.wantMsg)
+			}
+			if got := err.Type(); got != tt.wantType {
+				t.Errorf("Type() = %q, want %q", got, tt.wantType)
+			}
+			if len(err.StackFrames()) == 0 {
+				t.Errorf("StackFrames empty")
+			}
+		})
+	}
 }
 
 func TestWrap(t *testing.T) {
@@ -152,14 +210,12 @@ func TestWrap(t *testing.T) {
 		{
 			name:      "wrap error",
 			err:       wrapError,
-			skip:      0,
 			wantMsg:   "wrapped error",
 			wantCause: wrapError,
 		},
 		{
-			name:    "wrap string",
+			name:    "wrap string-only error",
 			err:     fmt.Errorf("string error"),
-			skip:    0,
 			wantMsg: "string error",
 		},
 		{
@@ -173,127 +229,281 @@ func TestWrap(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := errorx.Wrap(tt.err, tt.skip)
-			require.NotNil(t, err)
-			require.Equal(t, tt.wantMsg, err.Error())
-			if tt.wantCause != nil {
-				require.True(t, errorx.Is(err, tt.wantCause))
+			if err == nil {
+				t.Fatal("Wrap returned nil")
 			}
-			require.NotEmpty(t, err.StackFrames())
-		})
-	}
-}
-
-func TestWrapPrefix(t *testing.T) {
-	tests := []struct {
-		name     string
-		err      error
-		prefix   string
-		skip     int
-		wantMsg  string
-		wantType string
-	}{
-		{
-			name:     "basic prefix",
-			err:      fmt.Errorf("base error"),
-			prefix:   "prefix",
-			skip:     0,
-			wantMsg:  "prefix: base error",
-			wantType: "*errors.errorString",
-		},
-		{
-			name:     "multiple prefixes",
-			err:      errorx.WrapPrefix(fmt.Errorf("base error"), "prefix1", 0),
-			prefix:   "prefix2",
-			skip:     0,
-			wantMsg:  "prefix2: prefix1: base error",
-			wantType: "*errors.errorString",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := errorx.WrapPrefix(tt.err, tt.prefix, tt.skip)
-			require.NotNil(t, err)
-			require.Equal(t, tt.wantMsg, err.Error())
-			require.Equal(t, tt.wantType, err.Type())
-			require.NotEmpty(t, err.StackFrames())
-		})
-	}
-}
-
-func TestIs(t *testing.T) {
-	wrappedError := errors.New("wrapped error")
-	tests := []struct {
-		name        string
-		err         error
-		target      error
-		wantIsEqual bool
-	}{
-		{
-			name:        "same error",
-			err:         errors.New("error"),
-			target:      errors.New("error"),
-			wantIsEqual: false, // Different error instances
-		},
-		{
-			name:        "wrapped same error",
-			err:         errorx.Wrap(wrappedError, 0),
-			target:      wrappedError,
-			wantIsEqual: true,
-		},
-		{
-			name:        "different errors",
-			err:         errors.New("error1"),
-			target:      errors.New("error2"),
-			wantIsEqual: false,
-		},
-		{
-			name:        "nil errors",
-			err:         nil,
-			target:      nil,
-			wantIsEqual: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			isEqual := errorx.Is(tt.err, tt.target)
-			require.Equal(t, tt.wantIsEqual, isEqual)
+			if got := err.Error(); got != tt.wantMsg {
+				t.Errorf("Error() = %q, want %q", got, tt.wantMsg)
+			}
+			if tt.wantCause != nil && !errors.Is(err, tt.wantCause) {
+				t.Errorf("errors.Is did not find wantCause")
+			}
+			if len(err.StackFrames()) == 0 {
+				t.Errorf("StackFrames empty")
+			}
 		})
 	}
 }
 
 func TestErrorf(t *testing.T) {
-	tests := []struct {
-		name     string
-		format   string
-		args     []any
-		wantMsg  string
-		wantType string
+	cases := []struct {
+		name   string
+		format string
+		args   []any
+		want   string
 	}{
-		{
-			name:     "simple format",
-			format:   "test %s",
-			args:     []any{"error"},
-			wantMsg:  "test error",
-			wantType: "*errors.errorString",
-		},
-		{
-			name:     "multiple args",
-			format:   "%s: %d",
-			args:     []any{"count", 42},
-			wantMsg:  "count: 42",
-			wantType: "*errors.errorString",
-		},
+		{name: "simple", format: "test %s", args: []any{"error"}, want: "test error"},
+		{name: "multi-arg", format: "%s: %d", args: []any{"count", 42}, want: "count: 42"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			err := errorx.Errorf(c.format, c.args...)
+			if err == nil {
+				t.Fatal("Errorf returned nil")
+			}
+			if got := err.Error(); got != c.want {
+				t.Errorf("Error() = %q, want %q", got, c.want)
+			}
+			if got := err.Type(); got != "*errors.errorString" {
+				t.Errorf("Type() = %q, want %q", got, "*errors.errorString")
+			}
+		})
+	}
+}
+
+func TestErrorfPreservesWrap(t *testing.T) {
+	sentinel := errors.New("sentinel")
+	err := errorx.Errorf("ctx: %w", sentinel)
+	if !errors.Is(err, sentinel) {
+		t.Errorf("errors.Is did not see through Errorf %%w")
+	}
+}
+
+func TestNewErrorfAliasOfErrorf(t *testing.T) {
+	err := errorx.NewErrorf("legacy %s", "spelling")
+	if err == nil || err.Error() != "legacy spelling" {
+		t.Errorf("NewErrorf failed: %v", err)
+	}
+}
+
+func TestCauseReturnsRoot(t *testing.T) {
+	root := errors.New("root")
+	wrapped := errorx.WrapPrefix(errorx.Wrap(root, 0), "ctx", 0)
+	te, ok := wrapped.(*errorx.TraceError)
+	if !ok {
+		t.Fatalf("WrapPrefix returned %T, want *TraceError", wrapped)
+	}
+	if got := te.Cause(); got != root {
+		t.Errorf("Cause() = %v, want %v", got, root)
+	}
+}
+
+func TestUnwrapReturnsImmediate(t *testing.T) {
+	root := errors.New("root")
+	inner := errorx.Wrap(root, 0)
+	outer := errorx.WrapPrefix(inner, "ctx", 0)
+
+	got := errors.Unwrap(outer)
+	if got != inner {
+		t.Errorf("Unwrap(outer) = %v, want inner=%v", got, inner)
+	}
+}
+
+func TestStackFramesReturnsCopy(t *testing.T) {
+	err := errorx.NewError(errors.New("x"))
+	a := err.StackFrames()
+	if len(a) == 0 {
+		t.Fatal("no frames")
+	}
+	a[0] = errorx.StackFrame{Name: "tampered"}
+	b := err.StackFrames()
+	if b[0].Name == "tampered" {
+		t.Errorf("StackFrames did not return a copy: mutation leaked into internal state")
+	}
+}
+
+func TestStackReturnsCopy(t *testing.T) {
+	err := errorx.NewError(errors.New("x"))
+	a := err.Stack()
+	if len(a) == 0 {
+		t.Fatal("no pcs")
+	}
+	a[0] = 0xdeadbeef
+	b := err.Stack()
+	if b[0] == 0xdeadbeef {
+		t.Errorf("Stack did not return a copy")
+	}
+}
+
+func TestMetadataReturnsCopy(t *testing.T) {
+	err := errorx.NewError(errors.New("x"))
+	md := json.RawMessage(`{"a":1}`)
+	if e := err.SetMetadata(&md); e != nil {
+		t.Fatalf("SetMetadata: %v", e)
+	}
+	got := err.Metadata()
+	if got == nil {
+		t.Fatal("Metadata returned nil")
+	}
+	(*got)[0] = 'X'
+	again := err.Metadata()
+	if again == nil || (*again)[0] != '{' {
+		t.Errorf("Metadata did not return an independent copy")
+	}
+}
+
+func TestMetadataValidation(t *testing.T) {
+	t.Run("valid", func(t *testing.T) {
+		err := errorx.NewError(errors.New("x"))
+		md := json.RawMessage(`{"k":"v"}`)
+		if e := err.SetMetadata(&md); e != nil {
+			t.Errorf("SetMetadata(valid) returned error: %v", e)
+		}
+	})
+	t.Run("nil clears", func(t *testing.T) {
+		err := errorx.NewError(errors.New("x"))
+		md := json.RawMessage(`{"k":"v"}`)
+		if e := err.SetMetadata(&md); e != nil {
+			t.Fatalf("SetMetadata: %v", e)
+		}
+		if e := err.SetMetadata(nil); e != nil {
+			t.Errorf("SetMetadata(nil) returned error: %v", e)
+		}
+		if err.Metadata() != nil {
+			t.Errorf("Metadata not cleared after SetMetadata(nil)")
+		}
+	})
+	t.Run("invalid is rejected at set time", func(t *testing.T) {
+		err := errorx.NewError(errors.New("x"))
+		good := json.RawMessage(`{"a":1}`)
+		if e := err.SetMetadata(&good); e != nil {
+			t.Fatalf("seed metadata: %v", e)
+		}
+		bad := json.RawMessage(`{not json}`)
+		if e := err.SetMetadata(&bad); e == nil {
+			t.Errorf("SetMetadata(invalid) returned nil, want error")
+		}
+		md := err.Metadata()
+		if md == nil || string(*md) != `{"a":1}` {
+			t.Errorf("invalid SetMetadata overwrote previous value: %v", md)
+		}
+	})
+}
+
+func TestUnmarshalMetadata(t *testing.T) {
+	t.Run("present", func(t *testing.T) {
+		type want struct {
+			Key   string `json:"key"`
+			Value int    `json:"value"`
+		}
+		err := errorx.NewError(errors.New("x"))
+		md := json.RawMessage(`{"key":"test","value":123}`)
+		if e := err.SetMetadata(&md); e != nil {
+			t.Fatalf("SetMetadata: %v", e)
+		}
+		var w want
+		if e := err.UnmarshalMetadata(&w); e != nil {
+			t.Fatalf("UnmarshalMetadata: %v", e)
+		}
+		if w.Key != "test" || w.Value != 123 {
+			t.Errorf("decoded = %+v", w)
+		}
+	})
+	t.Run("absent", func(t *testing.T) {
+		var w struct{ Key string }
+		err := errorx.NewError(errors.New("x"))
+		if e := err.UnmarshalMetadata(&w); e != nil {
+			t.Errorf("UnmarshalMetadata(no metadata) returned error: %v", e)
+		}
+		if w.Key != "" {
+			t.Errorf("expected zero-value target, got %+v", w)
+		}
+	})
+}
+
+func TestMarshalJSONRecord(t *testing.T) {
+	err := errorx.WrapPrefix(fmt.Errorf("root cause"), "ctx", 0)
+	md := json.RawMessage(`{"req":"abc"}`)
+	if e := err.SetMetadata(&md); e != nil {
+		t.Fatalf("SetMetadata: %v", e)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := errorx.NewErrorf(tt.format, tt.args...)
-			require.NotNil(t, err)
-			require.Equal(t, tt.wantMsg, err.Error())
-			require.Equal(t, tt.wantType, err.Type())
-			require.NotEmpty(t, err.StackFrames())
-		})
+	raw, e := json.Marshal(err)
+	if e != nil {
+		t.Fatalf("Marshal: %v", e)
+	}
+
+	var got map[string]any
+	if e := json.Unmarshal(raw, &got); e != nil {
+		t.Fatalf("Unmarshal: %v", e)
+	}
+
+	if got["message"] != "ctx: root cause" {
+		t.Errorf("message = %v, want %q", got["message"], "ctx: root cause")
+	}
+	if got["cause"] != "root cause" {
+		t.Errorf("cause = %v, want %q", got["cause"], "root cause")
+	}
+	if got["prefix"] != "ctx" {
+		t.Errorf("prefix = %v, want %q", got["prefix"], "ctx")
+	}
+	if got["type"] != "*errors.errorString" {
+		t.Errorf("type = %v, want %q", got["type"], "*errors.errorString")
+	}
+	if _, ok := got["stack_frames"]; !ok {
+		t.Errorf("stack_frames absent")
+	}
+	if _, ok := got["metadata"]; !ok {
+		t.Errorf("metadata absent")
+	}
+	if bytes.Contains(raw, []byte("source_line")) {
+		t.Errorf("JSON contains source_line: %s", raw)
+	}
+}
+
+func TestMarshalJSONNilTraceError(t *testing.T) {
+	var te *errorx.TraceError
+	raw, err := json.Marshal(te)
+	if err != nil {
+		t.Fatalf("Marshal(nil *TraceError): %v", err)
+	}
+	if string(raw) != "null" {
+		t.Errorf("Marshal(nil *TraceError) = %q, want %q", raw, "null")
+	}
+}
+
+func TestFormatVerbs(t *testing.T) {
+	err := errorx.WrapPrefix(fmt.Errorf("base"), "ctx", 0)
+	te := err.(*errorx.TraceError)
+
+	if got := fmt.Sprintf("%s", te); got != "ctx: base" {
+		t.Errorf("%%s = %q", got)
+	}
+	if got := fmt.Sprintf("%v", te); got != "ctx: base" {
+		t.Errorf("%%v = %q", got)
+	}
+	if got := fmt.Sprintf("%q", te); got != `"ctx: base"` {
+		t.Errorf("%%q = %q", got)
+	}
+	plus := fmt.Sprintf("%+v", te)
+	if !strings.HasPrefix(plus, "ctx: base\n") {
+		t.Errorf("%%+v should start with the error message")
+	}
+	if !strings.Contains(plus, "errorx_test") {
+		t.Errorf("%%+v should contain stack info; got: %s", plus)
+	}
+}
+
+func TestMaxStackDepthClamp(t *testing.T) {
+	old := errorx.MaxStackDepth
+	defer func() { errorx.MaxStackDepth = old }()
+
+	errorx.MaxStackDepth = -1
+	err := errorx.NewError(errors.New("x"))
+	if err == nil {
+		t.Fatal("NewError returned nil under negative MaxStackDepth")
+	}
+	if len(err.Stack()) == 0 {
+		t.Errorf("Stack empty under clamped MaxStackDepth")
 	}
 }

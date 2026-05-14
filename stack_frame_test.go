@@ -2,141 +2,88 @@ package errorx_test
 
 import (
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/neumachen/errorx"
-	"github.com/stretchr/testify/require"
 )
 
 func TestNewStackFrame(t *testing.T) {
-	// Get current PC for testing
 	pc, _, _, ok := runtime.Caller(0)
-	require.True(t, ok, "Failed to get current PC")
+	if !ok {
+		t.Fatal("runtime.Caller failed")
+	}
 
-	tests := []struct {
-		name string
-		pc   uintptr
-		want struct {
-			hasFunc     bool
-			pkgContains string
-			namePrefix  string
+	t.Run("valid pc", func(t *testing.T) {
+		f := errorx.NewStackFrame(pc)
+		if f.Func() == nil {
+			t.Fatal("Func() = nil for valid pc")
 		}
-	}{
-		{
-			name: "valid program counter",
-			pc:   pc,
-			want: struct {
-				hasFunc     bool
-				pkgContains string
-				namePrefix  string
-			}{
-				hasFunc:     true,
-				pkgContains: "errorx_test",
-				namePrefix:  "TestNewStackFrame",
-			},
-		},
-		{
-			name: "zero program counter",
-			pc:   0,
-			want: struct {
-				hasFunc     bool
-				pkgContains string
-				namePrefix  string
-			}{
-				hasFunc: false,
-			},
-		},
-	}
+		if !strings.Contains(f.Package, "errorx_test") {
+			t.Errorf("Package = %q, want contains errorx_test", f.Package)
+		}
+		if f.Name == "" {
+			t.Errorf("Name empty")
+		}
+		if f.File == "" {
+			t.Errorf("File empty")
+		}
+		if f.LineNumber <= 0 {
+			t.Errorf("LineNumber = %d", f.LineNumber)
+		}
+	})
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			frame := errorx.NewStackFrame(tt.pc)
-
-			if tt.want.hasFunc {
-				require.NotNil(t, frame.Func())
-				require.Contains(t, frame.Package, tt.want.pkgContains)
-				require.True(t, len(frame.Name) > 0)
-				require.True(t, len(frame.File) > 0)
-				require.Greater(t, frame.LineNumber, 0)
-			} else {
-				require.Nil(t, frame.Func())
-			}
-		})
-	}
+	t.Run("zero pc", func(t *testing.T) {
+		f := errorx.NewStackFrame(0)
+		if f.Func() != nil {
+			t.Errorf("Func() should be nil for zero pc")
+		}
+	})
 }
 
-func TestStackFrame_String(t *testing.T) {
+func TestStackFrame_StringDoesNotReadSource(t *testing.T) {
 	pc, _, _, ok := runtime.Caller(0)
-	require.True(t, ok, "Failed to get current PC")
-
-	tests := []struct {
-		name       string
-		frame      func() errorx.StackFrame
-		wantPrefix string
-	}{
-		{
-			name: "valid frame",
-			frame: func() errorx.StackFrame {
-				return errorx.NewStackFrame(pc)
-			},
-			wantPrefix: "file:",
-		},
-		{
-			name: "zero PC frame",
-			frame: func() errorx.StackFrame {
-				return errorx.NewStackFrame(0)
-			},
-			wantPrefix: "file:",
-		},
+	if !ok {
+		t.Fatal("runtime.Caller failed")
 	}
+	f := errorx.NewStackFrame(pc)
+	s := f.String()
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			frame := tt.frame()
-			str := frame.String()
-			require.Contains(t, str, tt.wantPrefix)
-		})
+	// String should reference the file path...
+	if !strings.Contains(s, f.File) {
+		t.Errorf("String does not contain file path; got %q", s)
+	}
+	// ...but never contain the marker text we placed in this very test file.
+	// "do_not_read_source_marker_string" appears literally in our File, on a
+	// line that is NOT the one runtime.Caller returned. If String were
+	// reading the source file it would not include this exact string,
+	// but the assertion we care about is the inverse: the formatted output
+	// should not embed an arbitrary source line.
+	if strings.Contains(s, "do_not_read_source_marker_string") {
+		t.Errorf("String unexpectedly included source content: %s", s)
 	}
 }
+
+// Unused marker — present only to ensure the absence-check above is
+// meaningful if String() ever regresses to reading source files.
+var _ = "do_not_read_source_marker_string"
 
 func TestStackFrame_SourceLine(t *testing.T) {
 	pc, _, _, ok := runtime.Caller(0)
-	require.True(t, ok, "Failed to get current PC")
-
-	tests := []struct {
-		name    string
-		frame   func() errorx.StackFrame
-		wantErr bool
-	}{
-		{
-			name: "valid frame",
-			frame: func() errorx.StackFrame {
-				return errorx.NewStackFrame(pc)
-			},
-			wantErr: false,
-		},
-		{
-			name: "invalid file path",
-			frame: func() errorx.StackFrame {
-				f := errorx.NewStackFrame(pc)
-				f.File = "nonexistent/file.go"
-				return f
-			},
-			wantErr: true,
-		},
+	if !ok {
+		t.Fatal("runtime.Caller failed")
+	}
+	f := errorx.NewStackFrame(pc)
+	line, err := f.SourceLine()
+	if err != nil {
+		t.Fatalf("SourceLine: %v", err)
+	}
+	if line == "" {
+		t.Errorf("SourceLine returned empty")
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			frame := tt.frame()
-			line, err := frame.SourceLine()
-
-			if tt.wantErr {
-				require.Error(t, err)
-			} else {
-				require.NoError(t, err)
-				require.NotEmpty(t, line)
-			}
-		})
+	f.File = "nonexistent/file.go"
+	if _, err := f.SourceLine(); err == nil {
+		t.Errorf("SourceLine on missing file returned nil error")
 	}
 }

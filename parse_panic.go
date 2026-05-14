@@ -1,33 +1,31 @@
 package errorx
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 )
 
-// uncaughtPanic represents an uncaught panic.
+// uncaughtPanic carries the message recovered from a panic. It is used as
+// the underlying cause for errors produced by ParsePanic and FromPanic and
+// is what causes Type() to report "panic".
 type uncaughtPanic struct{ message string }
 
-func (p uncaughtPanic) Error() string {
-	return p.message
-}
+func (p uncaughtPanic) Error() string { return p.message }
 
-// ParsePanic converts a panic stack trace string into an Error instance.
-// It parses the panic message and stack trace information, creating a structured
-// error with full stack trace information. This is particularly useful for
-// converting recovered panics into error types that can be handled normally.
+// ParsePanic converts a panic stack-trace string into a *TraceError. The
+// input is expected to start with "panic: <message>" followed by the
+// "goroutine N [running]:" section emitted by the Go runtime. Frames are
+// parsed without recording program counters; StackFrames() will return the
+// parsed entries as-is.
 //
-// The function expects the panic string to be in the standard Go runtime format:
-//
-//	panic: <message>
-//
-//	goroutine <id> [<state>]:
-//	<stack trace>
-//
-// Returns:
-//   - Error: A structured error containing the panic information
-//   - error: Any error that occurred during parsing
+// ParsePanic never panics on malformed input; it returns a descriptive
+// error instead. For newer code that has access to the recovered value and
+// the raw debug.Stack() bytes, prefer FromPanic.
 func ParsePanic(panicToParse string) (Error, error) {
+	if panicToParse == "" {
+		return nil, fmt.Errorf("errorx.ParsePanic: empty input")
+	}
 	lines := strings.Split(panicToParse, "\n")
 
 	state := "start"
@@ -37,18 +35,21 @@ func ParsePanic(panicToParse string) (Error, error) {
 	for i := 0; i < len(lines); i++ {
 		line := lines[i]
 
-		if state == "start" {
+		switch state {
+		case "start":
 			if strings.HasPrefix(line, "panic: ") {
 				message = strings.TrimPrefix(line, "panic: ")
 				state = "seek"
-			} else {
-				return nil, NewErrorf("errorx.PanicParser: Invalid line (no prefix): %s", line)
+				continue
 			}
-		} else if state == "seek" {
+			return nil, fmt.Errorf("errorx.ParsePanic: invalid line (no prefix): %q", line)
+
+		case "seek":
 			if strings.HasPrefix(line, "goroutine ") && strings.HasSuffix(line, "[running]:") {
 				state = "parsing"
 			}
-		} else if state == "parsing" {
+
+		case "parsing":
 			if line == "" {
 				state = "done"
 				break
@@ -60,9 +61,8 @@ func ParsePanic(panicToParse string) (Error, error) {
 			}
 
 			i++
-
 			if i >= len(lines) {
-				return nil, NewErrorf("errorx.PanicParser: Invalid line (unpaired): %s", line)
+				return nil, fmt.Errorf("errorx.ParsePanic: invalid line (unpaired): %q", line)
 			}
 
 			frame, err := parsePanicFrame(line, lines[i], createdBy)
@@ -73,63 +73,61 @@ func ParsePanic(panicToParse string) (Error, error) {
 			stack = append(stack, *frame)
 			if createdBy {
 				state = "done"
-				break
 			}
+		}
+
+		if state == "done" {
+			break
 		}
 	}
 
 	if state == "done" || state == "parsing" {
-		return &errorData{cause: uncaughtPanic{message}, stackFrames: stack}, nil
+		te := &TraceError{
+			cause:        uncaughtPanic{message: message},
+			parsedFrames: stack,
+		}
+		return te, nil
 	}
-	return nil, NewErrorf("could not parse panic: %v", panicToParse)
+	return nil, fmt.Errorf("errorx.ParsePanic: could not parse panic: %q", panicToParse)
 }
 
-// parsePanicFrame parses a single stack frame from the panic information.
+// parsePanicFrame parses one (function, file:line) pair from the panic
+// stack section.
 func parsePanicFrame(name string, line string, createdBy bool) (*StackFrame, error) {
 	idx := strings.LastIndex(name, "(")
 	if idx == -1 && !createdBy {
-		return nil, NewErrorf("errorx.PanicParser: Invalid line (no call): %s", name)
+		return nil, fmt.Errorf("errorx.ParsePanic: invalid line (no call): %q", name)
 	}
 	if idx != -1 {
 		name = name[:idx]
 	}
-	pkg := ""
 
-	if lastslash := strings.LastIndex(name, "/"); lastslash >= 0 {
-		pkg += name[:lastslash] + "/"
-		name = name[lastslash+1:]
-	}
-	if period := strings.Index(name, "."); period >= 0 {
-		pkg += name[:period]
-		name = name[period+1:]
-	}
-
-	name = strings.Replace(name, "·", ".", -1)
+	pkg, fname := splitPackageAndName(name)
 
 	if !strings.HasPrefix(line, "\t") {
-		return nil, NewErrorf("errorx.PanicParser: Invalid line (no tab): %s", line)
+		return nil, fmt.Errorf("errorx.ParsePanic: invalid line (no tab): %q", line)
 	}
 
 	idx = strings.LastIndex(line, ":")
 	if idx == -1 {
-		return nil, NewErrorf("errorx.PanicParser: Invalid line (no line number): %s", line)
+		return nil, fmt.Errorf("errorx.ParsePanic: invalid line (no line number): %q", line)
 	}
 	file := line[1:idx]
 
 	number := line[idx+1:]
-	if idx = strings.Index(number, " +"); idx > -1 {
-		number = number[:idx]
+	if sp := strings.Index(number, " +"); sp > -1 {
+		number = number[:sp]
 	}
 
 	lno, err := strconv.ParseInt(number, 10, 32)
 	if err != nil {
-		return nil, NewErrorf("errorx.PanicParser: Invalid line (bad line number): %s", line)
+		return nil, fmt.Errorf("errorx.ParsePanic: invalid line (bad line number): %q", line)
 	}
 
 	return &StackFrame{
 		File:       file,
 		LineNumber: int(lno),
 		Package:    pkg,
-		Name:       name,
+		Name:       fname,
 	}, nil
 }

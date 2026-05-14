@@ -1,0 +1,68 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (go ${{ matrix.go }} / ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        go: ["1.24.x", "stable"]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+          check-latest: true
+
+      - name: Verify modules are tidy
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+
+      - name: Build
+        run: go build ./...
+
+      - name: Test
+        run: go test -count=1 ./...
+
+      - name: Test (race detector)
+        run: go test -count=1 -race ./...
+
+      - name: Fuzz (short smoke run)
+        run: go test -run='^$' -fuzz=FuzzParsePanic -fuzztime=15s
+
+  coverage:
+    name: coverage
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+
+      - name: Test with coverage
+        run: go test -count=1 -covermode=atomic -coverprofile=coverage.out ./...
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.out
+          if-no-files-found: error

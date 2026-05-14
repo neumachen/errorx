@@ -1,92 +1,80 @@
 /*
-Package errorx provides a rich error handling implementation with stack traces, error wrapping capabilities,
-and metadata support.
+Package errorx is a small, dependency-free extension of Go's standard
+errors package. It adds stack-trace capture, contextual prefix wrapping,
+structured JSON / log/slog output, optional caller-supplied metadata, and
+panic-recovery helpers, while preserving standard errors.Is / errors.As /
+errors.Unwrap semantics.
 
-Key Features:
-  - Stack traces for errors
-  - Error wrapping with optional prefixes
-  - JSON serialization support
-  - Panic parsing and recovery
-  - Source line information in stack frames
-  - Structured metadata attachment
-  - Type-safe metadata unmarshaling
+# Quick start
 
-Core Types and Interfaces:
+	err := errorx.Errorf("failed to process %s: %w", item, cause)
 
-Error interface extends the standard error interface with additional capabilities:
-  - Cause() error: Returns the underlying error
-  - StackFrames() []StackFrame: Returns the call stack frames
-  - Stack() []uintptr: Returns the raw program counters
-  - Prefix() string: Returns any prefix added to the error
-  - Type() string: Returns the error type
-  - RuntimeStack() []byte: Returns a formatted stack trace
-  - Metadata() *json.RawMessage: Returns associated metadata
-  - UnmarshalMetadata(any) error: Unmarshals metadata into a target struct
-
-StackFrame type provides detailed information about a single stack frame:
-  - File: Source file path
-  - LineNumber: Line number in the source file
-  - Name: Function name
-  - Package: Package path
-  - ProgramCounter: Raw program counter value
-
-Key Functions:
-
-Creating Errors:
-
-	err := errorx.NewError(fmt.Errorf("something went wrong"))
-	err := errorx.Errorf("failed to process %s", item)
-	err := errorx.NewError(existingError)
-
-Wrapping Errors:
-
-	err := errorx.Wrap(existingError, 0)
-	err := errorx.WrapPrefix(existingError, "validation", 0)
-
-Error Comparison:
-
-	if errorx.Is(err, target) {
-	    // Handle specific error
+	if errors.Is(err, cause) {
+	    // standard errors.Is sees through errorx wrappers
 	}
 
-Working with Metadata:
+	// Add context without mutating the wrapped error:
+	wrapped := errorx.WrapPrefix(err, "validation failed", 0)
 
-	// Attach metadata
-	metadata := json.RawMessage(`{"user_id": 123, "request_id": "abc-123"}`)
-	err.SetMetadata(&metadata)
+	// Attach structured metadata (validated as JSON at set time):
+	md := json.RawMessage(`{"request_id":"abc-123"}`)
+	wrapped.(*errorx.TraceError).SetMetadata(&md)
 
-	// Retrieve metadata
-	type ErrorContext struct {
-	    UserID    int    `json:"user_id"`
-	    RequestID string `json:"request_id"`
+# Core type
+
+The package's canonical type is *TraceError. All constructors return values
+backed by *TraceError; the historical Error interface is retained as a
+deprecated alias for source compatibility.
+
+A *TraceError carries:
+
+  - the wrapped cause (visible via Unwrap and Cause),
+  - a captured runtime stack (Stack, StackFrames),
+  - an optional prefix (Prefix),
+  - optional caller-supplied JSON metadata (Metadata, SetMetadata).
+
+It implements error, fmt.Formatter, json.Marshaler, and slog.LogValuer.
+
+# Behavior changes from earlier versions
+
+  - Nil in, nil out. NewError(nil), Wrap(nil, ...), and WrapPrefix(nil, ...,
+    ...) all return nil.
+  - Wrapping never mutates the wrapped error. Each Wrap / WrapPrefix call
+    produces a new *TraceError with a fresh stack capture.
+  - StackFrames(), Stack(), and Metadata() return copies; callers may freely
+    mutate the returned slices.
+  - Default stack formatting no longer reads source files from disk. The
+    opt-in StackFrame.SourceLine helper remains for explicit callers.
+  - errorx.Is is a thin wrapper around errors.Is.
+
+# Structured output
+
+JSON marshaling produces a Record value:
+
+	{
+	    "message":      "ctx: root cause",   // == Error()
+	    "cause":        "root cause",        // deepest non-TraceError cause
+	    "type":         "*errors.errorString",
+	    "prefix":       "ctx",
+	    "stack_frames": [...],
+	    "stack":        [...],
+	    "metadata":     {...}
 	}
-	var ctx ErrorContext
-	err.UnmarshalMetadata(&ctx)
 
-Example Usage:
+slog.LogValuer emits the same fields as a group attribute, omitting the raw
+stack PCs to keep log lines compact.
 
-	func ProcessItem(item string) error {
-	    if err := validate(item); err != nil {
-	        metadata := json.RawMessage(`{"item": "` + item + `"}`)
-	        wrappedErr := errorx.WrapPrefix(err, "validation failed", 0)
-	        wrappedErr.SetMetadata(&metadata)
-	        return wrappedErr
-	    }
+# Concurrency
 
-	    result, err := process(item)
-	    if err != nil {
-	        return errorx.Errorf("processing failed: %v", err)
-	    }
+All methods on *TraceError are safe for concurrent use. The wrapped cause,
+prefix, and captured PCs are immutable after construction; metadata access
+is guarded by an internal RWMutex.
 
-	    return nil
-	}
+# Security note
 
-The package is particularly useful in applications that need:
-  - Detailed error tracking and debugging
-  - Error cause chain analysis
-  - Stack trace information
-  - Structured error handling
-  - Context-rich error reporting
-  - Type-safe error metadata
+Stack frames may include absolute file paths and function names, and
+metadata may contain caller-controlled data. Do not expose the full
+structured representation to untrusted clients without first considering
+whether the contents are safe to disclose.
 */
 package errorx

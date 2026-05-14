@@ -254,7 +254,7 @@ func (e *TraceError) Cause() error {
 	if e == nil {
 		return nil
 	}
-	var cur error = e.cause
+	cur := e.cause
 	for {
 		next, ok := cur.(*TraceError)
 		if !ok || next == nil {
@@ -500,8 +500,8 @@ func (e *TraceError) Format(s fmt.State, verb rune) {
 	case 's':
 		_, _ = io.WriteString(s, e.Error())
 	case 'q':
-		fmt.Fprintf(s, "%q", e.Error())
+		_, _ = fmt.Fprintf(s, "%q", e.Error())
 	default:
-		fmt.Fprintf(s, "%%!%c(errorx.TraceError=%s)", verb, e.Error())
+		_, _ = fmt.Fprintf(s, "%%!%c(errorx.TraceError=%s)", verb, e.Error())
 	}
 }
